@@ -44,6 +44,7 @@ def measure_loudness(src: Path) -> dict:
     """First loudnorm pass: returns ffmpeg's measured values."""
     result = _run([
         "ffmpeg", "-hide_banner", "-nostats", "-i", str(src),
+        "-map", "0:a:0", "-vn",  # skip embedded cover art
         "-af", "aformat=channel_layouts=mono," + _loudnorm(":print_format=json"),
         "-f", "null", "-",
     ])
@@ -72,7 +73,7 @@ def convert(src: Path, dst: Path):
     tmp = dst.with_suffix(".tmp.mp3")
     _run([
         "ffmpeg", "-hide_banner", "-nostats", "-y", "-i", str(src),
-        "-map", "0:a:0",
+        "-map", "0:a:0", "-vn",
         "-af", f"aformat=channel_layouts=mono,{norm},aresample={SAMPLE_RATE}",
         "-ac", "1", "-ar", str(SAMPLE_RATE),
         "-c:a", "libmp3lame", "-b:a", "128k",
