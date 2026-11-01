@@ -13,6 +13,9 @@ namespace {
 constexpr uint32_t kPressFlashMs = 120;
 // If a lookup fails (bad file, card error), wait this long before trying again.
 constexpr int64_t kLookupRetryMs = 5000;
+constexpr int64_t kRecoveryMinMs = 2000;
+constexpr int64_t kRecoveryMaxMs = 30000;
+constexpr int kForceRestart = -2;  // playerStation_ value that no target matches
 
 // Display layout on the 128x32 panel.
 constexpr int kNameY = 16;
@@ -67,7 +70,7 @@ void Radio::loadStations() {
     for (const auto& dir : dirs) {
         Station s;
         if (!loadStationInfo(p_.storage, dir, s.info)) continue;
-        s.schedule.open(p_.storage, ("/stations/" + dir + "/schedule.txt").c_str());
+        s.scheduled = s.schedule.open(p_.storage, schedulePath(s).c_str());
         stations_.push_back(std::move(s));
     }
     std::stable_sort(stations_.begin(), stations_.end(), [](const Station& a, const Station& b) {
@@ -136,12 +139,48 @@ void Radio::syncPlayer(int64_t nowMs) {
         return;
     }
     Schedule::Position pos;
-    if (stations_[target].schedule.lookup(nowMs, pos)) {
+    lookupFailed_ = !stations_[target].schedule.lookup(nowMs, pos);
+    if (!lookupFailed_) {
         player_.start(stations_[target].info.dir, stations_[target].schedule, pos);
     } else {
         player_.stop();
         lastLookupFailMs_ = nowMs;
     }
+}
+
+std::string Radio::schedulePath(const Station& s) {
+    return "/stations/" + s.info.dir + "/schedule.txt";
+}
+
+bool Radio::storageTrouble() const {
+    if (player_.failed() || lookupFailed_) return true;
+    for (const auto& s : stations_)
+        if (s.scheduled && !s.schedule.isOpen()) return true;  // lost in a failed recovery
+    return false;
+}
+
+// SD cards can drop out (power dips, worn contacts). Rather than going silent
+// until a reboot: close everything, remount, reopen the schedules and resume
+// the station where the clock says. Each attempt can stall the audio briefly,
+// so retries back off from 2 s to 30 s while the trouble persists.
+void Radio::recoverStorage(int64_t nowMs) {
+    if (!storageTrouble()) {
+        recoveryBackoffMs_ = kRecoveryMinMs;
+        return;
+    }
+    if (nowMs < nextRecoveryMs_) return;
+
+    player_.stop();
+    for (auto& s : stations_) s.schedule.close();
+    p_.storage.recover();
+    for (auto& s : stations_)
+        if (s.scheduled) s.schedule.open(p_.storage, schedulePath(s).c_str());
+    lookupFailed_ = false;
+    playerStation_ = kForceRestart;
+    ++statRecoveries_;
+
+    nextRecoveryMs_ = nowMs + recoveryBackoffMs_;
+    recoveryBackoffMs_ = std::min(recoveryBackoffMs_ * 2, kRecoveryMaxMs);
 }
 
 void Radio::renderAudio() {
@@ -167,6 +206,8 @@ Radio::AudioStats Radio::audioStats() {
     s.framesRendered = statFrames_;
     s.stationPeak = statStationPeak_ / 32768.0f;
     s.outputPeak = statOutputPeak_ / 32768.0f;
+    s.storageRecoveries = statRecoveries_;
+    statRecoveries_ = 0;
     statFrames_ = 0;
     statStationPeak_ = statOutputPeak_ = 0;
     return s;
@@ -196,6 +237,7 @@ void Radio::update() {
     const int64_t nowMs = localMs();
     syncPlayer(nowMs);
     renderAudio();
+    recoverStorage(nowMs);
 
     if (lastSec_ / 60 != shownMinute_) {
         shownMinute_ = lastSec_ / 60;

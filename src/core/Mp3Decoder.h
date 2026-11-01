@@ -30,6 +30,8 @@ public:
     // Fills up to `count` samples; returns fewer only at end of file.
     size_t read(int16_t* out, size_t count);
     bool atEnd() const { return ended_; }
+    // A read failed before the end of the file (e.g. the SD card dropped out).
+    bool failed() const { return failed_; }
     // Sample rate reported by the last decoded frame (0 before the first).
     int sampleRate() const { return sampleRate_; }
 
@@ -52,6 +54,7 @@ private:
     size_t pcmLen_ = 0;
     size_t pcmPos_ = 0;
     bool ended_ = true;
+    bool failed_ = false;
     int sampleRate_ = 0;
 };
 

@@ -15,6 +15,7 @@ void StationPlayer::start(const std::string& stationDir, Schedule& schedule,
     schedule_ = &schedule;
     index_ = pos.index;
     entry_ = pos.entry;
+    failed_ = false;
     openEntry(pos.offsetMs);
 }
 
@@ -34,12 +35,20 @@ void StationPlayer::openEntry(uint32_t offsetMs) {
     decoder_.close();
     if (entry_.isSilence()) return;
     const std::string path = "/stations/" + dir_ + "/" + entry_.path;
-    decoder_.open(storage_.open(path.c_str()), offsetMs);  // on failure: silence
+    auto file = storage_.open(path.c_str());
+    if (!file) {
+        // A file missing from the card just plays silence for its slot. If
+        // the card can't even find the schedule, the card itself is in trouble.
+        const std::string schedule = "/stations/" + dir_ + "/schedule.txt";
+        if (!storage_.exists(schedule.c_str())) failed_ = true;
+    }
+    decoder_.open(std::move(file), offsetMs);
 }
 
 void StationPlayer::advance() {
     index_ = (index_ + 1) % schedule_->count();
     if (!schedule_->entry(index_, entry_)) {
+        failed_ = true;
         stop();
         return;
     }

@@ -62,9 +62,11 @@ struct FakeClock : Clock {
 
 class MemoryFile : public File {
 public:
-    explicit MemoryFile(const std::string& data, int* fileReads = nullptr)
-        : data_(data), fileReads_(fileReads) {}
+    explicit MemoryFile(const std::string& data, int* fileReads = nullptr,
+                        const bool* failing = nullptr)
+        : data_(data), fileReads_(fileReads), failing_(failing) {}
     size_t read(uint8_t* dst, size_t len) override {
+        if (failing_ && *failing_) return 0;  // card dropped out
         const size_t n = pos_ >= data_.size() ? 0 : std::min(len, data_.size() - pos_);
         std::memcpy(dst, data_.data() + pos_, n);
         pos_ += n;
@@ -84,6 +86,7 @@ public:
 private:
     const std::string& data_;
     int* fileReads_;
+    const bool* failing_;
     size_t pos_ = 0;
 };
 
@@ -91,13 +94,22 @@ private:
 struct MemoryStorage : Storage {
     std::map<std::string, std::string> files;
     std::map<std::string, int> reads;  // read() calls per path
+    // Simulated SD dropout: opens and reads fail until recover() succeeds.
+    bool failing = false;
+    bool recoverable = true;
+    int recoveries = 0;
 
     bool begin() override { return true; }
-    bool exists(const char* path) override { return files.count(path) > 0; }
+    bool exists(const char* path) override { return !failing && files.count(path) > 0; }
     std::unique_ptr<File> open(const char* path) override {
         auto it = files.find(path);
-        if (it == files.end()) return nullptr;
-        return std::make_unique<MemoryFile>(it->second, &reads[path]);
+        if (failing || it == files.end()) return nullptr;
+        return std::make_unique<MemoryFile>(it->second, &reads[path], &failing);
+    }
+    bool recover() override {
+        ++recoveries;
+        if (recoverable) failing = false;
+        return !failing;
     }
     bool list(const char* dir, std::vector<std::string>& names) override {
         const std::string prefix = std::string(dir) + "/";

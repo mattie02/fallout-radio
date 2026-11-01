@@ -365,15 +365,24 @@ public:
         const uint32_t start = micros();
         const ssize_t n = ::read(fd_, dst, len);
         noteTime(sdTiming.slowestReadUs, start);
-        return n > 0 ? static_cast<size_t>(n) : 0;
+        if (n <= 0) return 0;
+        pos_ += static_cast<uint32_t>(n);
+        return static_cast<size_t>(n);
     }
-    bool seek(uint32_t pos) override { return ::lseek(fd_, static_cast<off_t>(pos), SEEK_SET) >= 0; }
-    uint32_t position() override { return static_cast<uint32_t>(::lseek(fd_, 0, SEEK_CUR)); }
+    bool seek(uint32_t pos) override {
+        if (::lseek(fd_, static_cast<off_t>(pos), SEEK_SET) < 0) return false;
+        pos_ = pos;
+        return true;
+    }
+    // Tracked here rather than asked of the card: after a card error lseek()
+    // fails too, and a read error must not look like the end of the file.
+    uint32_t position() override { return pos_; }
     uint32_t size() override { return size_; }
 
 private:
     int fd_;
     uint32_t size_;
+    uint32_t pos_ = 0;
 };
 
 }  // namespace
@@ -402,6 +411,12 @@ std::unique_ptr<File> Esp32Storage::open(const char* path) {
         return nullptr;
     }
     return std::unique_ptr<File>(new SdFile(fd, static_cast<uint32_t>(st.st_size)));
+}
+
+bool Esp32Storage::recover() {
+    SD.end();
+    ok_ = SD.begin(pins::kSdCs, sdSpi, pins::kSdSpiHz, kMount);
+    return ok_;
 }
 
 Esp32Storage::Timing Esp32Storage::takeTiming() {

@@ -252,6 +252,76 @@ void test_song_change_reads_schedule_once() {
     TEST_ASSERT_LESS_OR_EQUAL(3, p.storage.reads["/stations/01_t/schedule.txt"] - afterStart);
 }
 
+// A radio playing a long schedule of tone entries, clock and audio in step.
+struct ToneRadio : FakePlatform {
+    Radio radio{platform};
+    explicit ToneRadio(const std::string& toneMp3) {
+        storage.files["/stations/01_t/music/001_tone.mp3"] = toneMp3;
+        storage.files["/stations/01_t/station.json"] = R"({"name": "Tone", "frequency": 98.6})";
+        ScheduleBuilder b;
+        for (int i = 0; i < 100; ++i) b.add(2000, "music/001_tone.mp3");
+        storage.files["/stations/01_t/schedule.txt"] = b.build();
+        clock.t = 20808LL * 86400;
+        radio.begin();
+    }
+    // Advances clock and audio together in 50 ms steps.
+    void run(int ms) {
+        for (int t = 0; t < ms; t += 50) {
+            clock.ms += 50;
+            if (clock.ms % 1000 == 0) ++clock.t;
+            audio.room += kSampleRate / 20;
+            radio.update();
+        }
+    }
+    uint32_t clockPositionMs() const {
+        return static_cast<uint32_t>((clock.t - 20808LL * 86400) * 1000 + clock.ms % 1000);
+    }
+};
+
+void test_recovers_from_card_dropout() {
+    ToneRadio r(tone);
+    r.run(1000);
+    TEST_ASSERT_TRUE(r.radio.status().playing);
+
+    r.storage.failing = true;  // card drops out mid-song
+    r.run(1500);
+    TEST_ASSERT_EQUAL(1, r.storage.recoveries);  // remounted once, not repeatedly
+    TEST_ASSERT_FALSE(r.storage.failing);
+
+    r.audio.written.clear();
+    r.run(1000);
+    const Radio::Status s = r.radio.status();
+    TEST_ASSERT_TRUE(s.playing);
+    // Resumed where the clock says, not where it stopped.
+    TEST_ASSERT_UINT32_WITHIN(300, r.clockPositionMs(), s.entry.startMs + s.offsetMs);
+    const auto& w = r.audio.written;
+    TEST_ASSERT_FLOAT_WITHIN(15.0, 440.0, frequency(&w[w.size() / 2], w.size() / 2));
+    TEST_ASSERT_EQUAL(1, r.radio.audioStats().storageRecoveries);
+}
+
+void test_dead_card_retries_with_backoff() {
+    ToneRadio r(tone);
+    r.run(500);
+    r.storage.failing = true;
+    r.storage.recoverable = false;
+    r.run(20000);
+    // Attempts at ~0, 2, 6 and 14 s: backing off, not hammering the card.
+    TEST_ASSERT_TRUE(r.storage.recoveries >= 3 && r.storage.recoveries <= 5);
+    TEST_ASSERT_FALSE(r.radio.status().playing);
+
+    r.storage.recoverable = true;  // card comes back (e.g. reseated)
+    r.run(32000);                  // within the 30 s maximum pause
+    TEST_ASSERT_TRUE(r.radio.status().playing);
+}
+
+void test_missing_file_is_not_a_card_failure() {
+    ToneRadio r(tone);
+    r.storage.files.erase("/stations/01_t/music/001_tone.mp3");
+    r.run(5000);
+    TEST_ASSERT_EQUAL(0, r.storage.recoveries);
+    TEST_ASSERT_TRUE(r.radio.status().playing);  // silence in the slot, keeping time
+}
+
 int main() {
     tone = readFixture(__FILE__, "tone440.mp3");
     if (tone.size() < 10000) {
@@ -271,5 +341,8 @@ int main() {
     RUN_TEST(test_mixer_ramps_smoothly);
     RUN_TEST(test_radio_plays_tuned_station);
     RUN_TEST(test_song_change_reads_schedule_once);
+    RUN_TEST(test_recovers_from_card_dropout);
+    RUN_TEST(test_dead_card_retries_with_backoff);
+    RUN_TEST(test_missing_file_is_not_a_card_failure);
     return UNITY_END();
 }

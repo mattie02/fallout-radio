@@ -64,8 +64,9 @@ void printAudio() {
     const uint32_t ms = millis() - statsSinceMs;
     Serial.printf("audio over %u ms: rendered %u frames (%.0f/s, need 44100/s), underruns %u\n", ms,
                   a.framesRendered, ms ? a.framesRendered * 1000.0 / ms : 0.0, audio.takeUnderruns());
-    Serial.printf("  decoder %s, %d Hz, station peak %.3f, output peak %.3f\n",
-                  a.decoderOpen ? "open" : "CLOSED", a.sampleRate, a.stationPeak, a.outputPeak);
+    Serial.printf("  decoder %s, %d Hz, station peak %.3f, output peak %.3f, sd recoveries %u\n",
+                  a.decoderOpen ? "open" : "CLOSED", a.sampleRate, a.stationPeak, a.outputPeak,
+                  a.storageRecoveries);
     Serial.printf("  loop: %u passes, slowest %u us\n", loopCount, slowestLoopUs);
     const radio::Esp32Storage::Timing sd = storage.takeTiming();
     Serial.printf("  sd: %u opens, slowest open %u us, slowest read %u us\n", sd.opens,

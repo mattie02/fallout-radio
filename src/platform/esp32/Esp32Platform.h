@@ -94,6 +94,7 @@ public:
     bool exists(const char* path) override;
     std::unique_ptr<File> open(const char* path) override;
     bool list(const char* dir, std::vector<std::string>& names) override;
+    bool recover() override;  // unmount and remount the card
 
     // Diagnostics: slowest open() and file read since the last call, in us.
     struct Timing {

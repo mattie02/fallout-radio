@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "core/Config.h"
@@ -20,6 +21,7 @@ public:
     struct Station {
         StationInfo info;
         Schedule schedule;  // closed if schedule.txt is missing or invalid
+        bool scheduled = false;  // schedule.txt opened at startup
     };
 
     // Snapshot for debugging / the simulator's window title.
@@ -39,6 +41,7 @@ public:
         uint32_t framesRendered = 0;
         float stationPeak = 0;       // 0..1, decoded station audio before mixing
         float outputPeak = 0;        // 0..1, after mixing and effects
+        uint32_t storageRecoveries = 0;
     };
     AudioStats audioStats();
 
@@ -73,6 +76,9 @@ private:
     int64_t localMs();
     void syncPlayer(int64_t nowMs);
     void renderAudio();
+    bool storageTrouble() const;
+    void recoverStorage(int64_t nowMs);
+    static std::string schedulePath(const Station& s);
     void render();
 
     Platform& p_;
@@ -101,6 +107,12 @@ private:
     // When a schedule lookup last failed (bad file): retry after a pause
     // rather than hammering storage every update.
     int64_t lastLookupFailMs_ = INT64_MIN / 2;
+    bool lookupFailed_ = false;
+
+    // Storage recovery (SD card dropouts): retry with growing pauses.
+    int64_t nextRecoveryMs_ = INT64_MIN / 2;
+    int64_t recoveryBackoffMs_ = 2000;
+    uint32_t statRecoveries_ = 0;
 
     bool dirty_ = true;
     int64_t shownMinute_ = -1;

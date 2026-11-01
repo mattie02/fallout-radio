@@ -82,6 +82,10 @@ public:
     // Names (not paths) of the entries in a folder, unsorted, skipping
     // hidden ones. Returns false if the folder can't be read.
     virtual bool list(const char* dir, std::vector<std::string>& names) = 0;
+    // After read errors: try to bring the storage back (e.g. remount the SD
+    // card). All open Files must be closed first. Returns true if it is
+    // usable again. May take a while; called rarely.
+    virtual bool recover() { return false; }
 };
 
 struct Platform {

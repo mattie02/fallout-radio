@@ -32,6 +32,10 @@ public:
     // Position within the whole schedule.
     uint32_t schedulePositionMs() const { return entry_.startMs + offsetMs(); }
 
+    // Storage trouble: a read failed mid-file, a scheduled file wouldn't open,
+    // or the next schedule entry couldn't be read. Cleared by start().
+    bool failed() const { return failed_ || decoder_.failed(); }
+
     // Diagnostics.
     bool decoderOpen() const { return decoder_.isOpen() && !decoder_.atEnd(); }
     int decodedSampleRate() const { return decoder_.sampleRate(); }
@@ -47,6 +51,7 @@ private:
     Schedule::Entry entry_;
     uint64_t played_ = 0;     // samples into the entry, including the start offset
     uint64_t remaining_ = 0;  // samples left in the entry's slot
+    bool failed_ = false;
     Mp3Decoder decoder_;
 };
 

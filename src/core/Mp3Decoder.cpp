@@ -34,6 +34,7 @@ void Mp3Decoder::close() {
     pcmLen_ = pcmPos_ = 0;
     fileDone_ = false;
     ended_ = true;
+    failed_ = false;
 }
 
 bool Mp3Decoder::refill() {
@@ -45,7 +46,10 @@ bool Mp3Decoder::refill() {
     }
     if (inputLen_ == kInputSize) return false;
     const size_t n = file_->read(input_ + inputLen_, kInputSize - inputLen_);
-    if (n == 0) fileDone_ = true;
+    if (n == 0) {
+        fileDone_ = true;
+        if (file_->position() < file_->size()) failed_ = true;  // not EOF: read error
+    }
     inputLen_ += n;
     return n > 0;
 }
