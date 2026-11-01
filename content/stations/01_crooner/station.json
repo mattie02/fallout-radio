@@ -1,0 +1,10 @@
+{
+  "name": "Crooner Ballads",
+  "frequency": 91.5,
+  "no_repeat_hours": { "music": 6, "*": 1 },
+  "pattern": [
+    { "pick": "music", "count": [2, 3] },
+    { "pick": "ids" },
+    { "pick": { "dj": 2, "ads": 1 }, "count": [1, 2] }
+  ]
+}

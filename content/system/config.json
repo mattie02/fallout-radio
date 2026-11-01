@@ -1,0 +1,7 @@
+{
+  "dial": { "min": 88.0, "max": 108.0, "step": 0.1 },
+  "signal": {
+    "lock_width": 0.2,
+    "fade_width": 0.6
+  }
+}

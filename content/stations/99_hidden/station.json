@@ -1,0 +1,9 @@
+{
+  "name": "Emergency Broadcast",
+  "frequency": 107.9,
+  "no_repeat_hours": { "*": 0 },
+  "pattern": [
+    { "pick": "broadcast" },
+    { "silence": [20, 90] }
+  ]
+}

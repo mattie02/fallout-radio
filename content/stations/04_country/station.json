@@ -1,0 +1,10 @@
+{
+  "name": "Country & Western",
+  "frequency": 103.1,
+  "no_repeat_hours": { "music": 6, "*": 1 },
+  "pattern": [
+    { "pick": "music", "count": [2, 3] },
+    { "pick": "ids" },
+    { "pick": "dj" }
+  ]
+}

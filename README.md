@@ -11,6 +11,17 @@ pio run -e desktop -t exec    # build and run the simulator
 pio test -e desktop           # unit tests (RADIO_DUMP=1 prints the display as ASCII)
 ```
 
+## Content
+
+Put raw audio in `source/stations/<station>/<category>/` (e.g. `source/stations/01_crooner/music/`), then:
+
+```bash
+python3 tools/prep/prep.py        # convert to content/ and build each schedule.txt
+python3 tools/prep/prep.py demo   # or: generate placeholder audio first
+```
+
+Station rules live in `content/stations/*/station.json`. See [tools/prep/README.md](tools/prep/README.md).
+
 ## Simulator
 
 ```

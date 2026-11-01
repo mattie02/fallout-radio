@@ -1,0 +1,10 @@
+{
+  "name": "News",
+  "frequency": 95.3,
+  "no_repeat_hours": { "news": 8, "*": 1 },
+  "pattern": [
+    { "pick": "ids" },
+    { "pick": "news", "count": [2, 3] },
+    { "pick": "music" }
+  ]
+}
