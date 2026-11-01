@@ -35,6 +35,22 @@ Station rules live in `content/stations/*/station.json`. See [tools/prep/README.
 | P | Pause / resume the clock |
 | ] / [ | Clock faster / slower (1×, 10×, 60×, 600×, 3600×, 86400×) |
 | R | Back to real time |
+| C | Reload `system/config.json` (tune the sound without restarting) |
 | Esc | Quit |
+
+### Tuning the sound
+
+The `audio` section of `content/system/config.json` sets the sound. Edit it while the simulator runs and press C to hear the change:
+
+| Key | Default | What it does |
+|---|---|---|
+| `volume` | 0.7 | Master volume, 0–1 |
+| `static_level` | 0.5 | Static loudness between stations |
+| `hiss` | 0.03 | Static left when fully tuned |
+| `crackle_per_sec` | 6 | Pops per second in the static |
+| `eq_low_hz` / `eq_high_hz` | 250 / 3800 | The "old speaker" band-pass |
+| `drive` | 1.4 | Warm saturation on peaks (1 = clean) |
+
+`signal.lock_mhz` and `signal.fade_mhz` set how close you need to be to a station, and how quickly it fades into static.
 
 The window title shows what the radio is doing: frequency, the station in range and its signal strength, the file playing on it with the position (e.g. `music/012_blue_moon.mp3 1:23/3:05`), and the simulated date, time and speed. Use it with the clock keys to check schedules. `--content` defaults to `./content`.

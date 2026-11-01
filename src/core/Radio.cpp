@@ -42,9 +42,21 @@ bool Radio::begin() {
     dialMax_ = std::max(dialMin_, tenths(config_.dialMaxMhz));
     dial_ = std::min(std::max(dial_, dialMin_), dialMax_);
     tuner_.setSignal(config_.lockMhz, config_.fadeMhz);
+    mixer_.configure(config_.audio);
     retune();
     dirty_ = true;
     return ok;
+}
+
+void Radio::reloadConfig() {
+    RadioConfig fresh;  // keys removed from the file go back to defaults
+    loadRadioConfig(p_.storage, fresh);
+    fresh.dialMinMhz = config_.dialMinMhz;  // dial range needs a restart
+    fresh.dialMaxMhz = config_.dialMaxMhz;
+    config_ = fresh;
+    tuner_.setSignal(config_.lockMhz, config_.fadeMhz);
+    mixer_.configure(config_.audio);
+    retune();
 }
 
 void Radio::loadStations() {
@@ -71,6 +83,16 @@ void Radio::retune() {
     tuned_ = r;
 }
 
+int64_t Radio::localMs() {
+    const int64_t sec = p_.clock.now();
+    const uint32_t ms = p_.clock.millis();
+    if (sec != lastSec_) {
+        lastSec_ = sec;
+        secStartMillis_ = ms;
+    }
+    return sec * 1000 + std::min<uint32_t>(ms - secStartMillis_, 999);
+}
+
 void Radio::trackSchedule(int64_t nowMs) {
     if (tuned_.station < 0) {
         haveEntry_ = false;
@@ -90,6 +112,42 @@ void Radio::trackSchedule(int64_t nowMs) {
     } else {
         entryStartMs_ = nowMs;
         entryEndMs_ = nowMs + kLookupRetryMs;
+    }
+}
+
+void Radio::syncPlayer(int64_t nowMs) {
+    const int target = (tuned_.station >= 0 && tuned_.signal > 0 && haveEntry_) ? tuned_.station : -1;
+    bool restart = target != playerStation_;
+    if (!restart && target >= 0 && player_.active()) {
+        // Cheap check, no storage access: is the player where the clock says?
+        const Schedule& schedule = stations_[target].schedule;
+        const int64_t length = schedule.lengthMs();
+        int64_t drift = (static_cast<int64_t>(player_.schedulePositionMs()) -
+                         Schedule::positionMs(nowMs, schedule.lengthMs())) % length;
+        if (drift > length / 2) drift -= length;
+        if (drift < -length / 2) drift += length;
+        restart = drift > kMaxDriftMs || drift < -kMaxDriftMs;
+    }
+    if (!restart) return;
+
+    playerStation_ = target;
+    if (target < 0) {
+        player_.stop();
+        return;
+    }
+    Schedule::Position pos = entry_;
+    pos.offsetMs = static_cast<uint32_t>(nowMs - entryStartMs_);
+    player_.start(stations_[target].info.dir, stations_[target].schedule, pos);
+}
+
+void Radio::renderAudio() {
+    size_t avail = p_.audio.availableFrames();
+    while (avail >= kAudioBlock) {
+        player_.read(stationBuf_, kAudioBlock);
+        mixer_.render(stationBuf_, tuned_.signal, outBuf_, kAudioBlock);
+        const size_t written = p_.audio.write(outBuf_, kAudioBlock);
+        if (written < kAudioBlock) break;
+        avail -= kAudioBlock;
     }
 }
 
@@ -114,10 +172,13 @@ void Radio::update() {
         dirty_ = true;
     }
 
-    const int64_t now = p_.clock.now();
-    trackSchedule(now * 1000);
-    if (now / 60 != shownMinute_) {
-        shownMinute_ = now / 60;
+    const int64_t nowMs = localMs();
+    trackSchedule(nowMs);
+    syncPlayer(nowMs);
+    renderAudio();
+
+    if (lastSec_ / 60 != shownMinute_) {
+        shownMinute_ = lastSec_ / 60;
         dirty_ = true;
     }
 
@@ -132,12 +193,10 @@ Radio::Status Radio::status() const {
     s.dialMhz = dialMhz();
     s.station = tuned_.station;
     s.signal = tuned_.signal;
-    if (haveEntry_ && entryStation_ == tuned_.station) {
+    if (player_.active() && playerStation_ == tuned_.station) {
         s.playing = true;
-        s.entry = entry_.entry;
-        const int64_t off = p_.clock.now() * 1000 - entryStartMs_;
-        s.offsetMs = static_cast<uint32_t>(std::min<int64_t>(
-            std::max<int64_t>(off, 0), entry_.entry.durationMs));
+        s.entry = player_.entry();
+        s.offsetMs = player_.offsetMs();
     }
     return s;
 }

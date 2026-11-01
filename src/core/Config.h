@@ -6,12 +6,25 @@
 
 namespace radio {
 
+// "audio" in /system/config.json. Tunable by ear: the simulator reloads
+// the file when you press C.
+struct AudioConfig {
+    float volume = 0.7f;        // master, 0..1
+    float staticLevel = 0.5f;   // static loudness with no station
+    float hiss = 0.03f;         // static left over when fully tuned
+    float crackle = 6.0f;       // pops per second in the static
+    float lowHz = 250.0f;       // vintage band-pass: high-pass corner
+    float highHz = 3800.0f;     //   and low-pass corner
+    float drive = 1.4f;         // soft saturation; 1 = clean
+};
+
 // /system/config.json
 struct RadioConfig {
     float dialMinMhz = 88.0f;
     float dialMaxMhz = 108.0f;
     float lockMhz = 0.1f;  // full signal within this distance of a station
     float fadeMhz = 0.4f;  // then fades to nothing over this distance
+    AudioConfig audio;
 };
 
 // /stations/<dir>/station.json (only what the firmware needs; the schedule

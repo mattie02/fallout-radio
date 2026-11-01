@@ -3,5 +3,14 @@
   "signal": {
     "lock_mhz": 0.1,
     "fade_mhz": 0.4
+  },
+  "audio": {
+    "volume": 0.7,
+    "static_level": 0.5,
+    "hiss": 0.03,
+    "crackle_per_sec": 6,
+    "eq_low_hz": 250,
+    "eq_high_hz": 3800,
+    "drive": 1.4
   }
 }

@@ -5,7 +5,7 @@
 // Dial:   mouse wheel, ← →  (Shift for 1 MHz steps)
 // Button: click, Space
 // Clock:  P pause/resume, ] faster, [ slower, R back to real time
-// Esc quits.
+// C reloads system/config.json (tune the sound by ear). Esc quits.
 
 // Excluded from `pio test` builds, which bring their own main().
 #ifndef PIO_UNIT_TESTING
@@ -126,6 +126,10 @@ int main(int argc, char** argv) {
                         case SDLK_r:
                             speedIndex = 0;
                             clock.resetToRealTime();
+                            break;
+                        case SDLK_c:
+                            radio.reloadConfig();
+                            std::printf("reloaded %s/system/config.json\n", contentDir.c_str());
                             break;
                         default: break;
                     }

@@ -24,6 +24,15 @@ bool loadRadioConfig(Storage& storage, RadioConfig& config) {
     config.dialMaxMhz = doc["dial"]["max"] | config.dialMaxMhz;
     config.lockMhz = doc["signal"]["lock_mhz"] | config.lockMhz;
     config.fadeMhz = doc["signal"]["fade_mhz"] | config.fadeMhz;
+    JsonVariantConst audio = doc["audio"];
+    AudioConfig& a = config.audio;
+    a.volume = audio["volume"] | a.volume;
+    a.staticLevel = audio["static_level"] | a.staticLevel;
+    a.hiss = audio["hiss"] | a.hiss;
+    a.crackle = audio["crackle_per_sec"] | a.crackle;
+    a.lowHz = audio["eq_low_hz"] | a.lowHz;
+    a.highHz = audio["eq_high_hz"] | a.highHz;
+    a.drive = audio["drive"] | a.drive;
     return true;
 }
 

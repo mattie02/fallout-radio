@@ -2,8 +2,12 @@
 
 // In-memory platform for unit tests. Header-only; include from a test suite.
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <string>
@@ -13,10 +17,18 @@
 
 namespace radio::test {
 
+// Accepts up to `room` frames per update (0 = audio off) and records them.
 struct FakeAudio : AudioOut {
+    size_t room = 0;
+    std::vector<int16_t> written;
     bool begin(uint32_t) override { return true; }
-    size_t availableFrames() override { return 0; }
-    size_t write(const int16_t*, size_t) override { return 0; }
+    size_t availableFrames() override { return room; }
+    size_t write(const int16_t* samples, size_t frames) override {
+        frames = std::min(frames, room);
+        written.insert(written.end(), samples, samples + frames);
+        room -= frames;
+        return frames;
+    }
 };
 
 struct FakeInput : Input {
@@ -104,6 +116,20 @@ struct FakePlatform {
     MemoryStorage storage;
     Platform platform{audio, input, display, clock, storage};
 };
+
+// Reads a file next to the calling test source (pass __FILE__).
+inline std::string readFixture(const char* testFile, const char* name) {
+    std::string path = testFile;
+    path = path.substr(0, path.find_last_of('/') + 1) + "fixtures/" + name;
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+inline double rms(const int16_t* s, size_t n) {
+    double sum = 0;
+    for (size_t i = 0; i < n; ++i) sum += static_cast<double>(s[i]) * s[i];
+    return n ? std::sqrt(sum / n) / 32768.0 : 0;
+}
 
 // Builds a schedule.txt exactly as tools/prep writes it.
 struct ScheduleBuilder {

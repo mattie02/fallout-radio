@@ -5,14 +5,16 @@
 
 #include "core/Config.h"
 #include "core/Framebuffer.h"
+#include "core/Mixer.h"
 #include "core/Schedule.h"
+#include "core/StationPlayer.h"
 #include "core/Tuner.h"
 #include "platform/Platform.h"
 
 namespace radio {
 
-// Main state machine: reads the dial, tunes, tracks what each station is
-// playing, draws the display. Mixer and Effects plug in here in step 4.
+// Main state machine: reads the dial, tunes, plays the tuned station's
+// schedule mixed with static, draws the display.
 class Radio {
 public:
     struct Station {
@@ -30,11 +32,13 @@ public:
         uint32_t offsetMs = 0;
     };
 
-    explicit Radio(Platform& platform) : p_(platform) {}
+    explicit Radio(Platform& platform) : p_(platform), player_(platform.storage) {}
 
     bool begin();
     // Call as often as possible. Never blocks.
     void update();
+    // Re-reads /system/config.json (signal and audio settings).
+    void reloadConfig();
 
     // Dial position in tenths of MHz.
     int dial() const { return dial_; }
@@ -46,12 +50,28 @@ public:
     Status status() const;
 
 private:
+    static constexpr size_t kAudioBlock = 256;
+    // Re-seek the player if it drifts this far from the clock.
+    static constexpr int64_t kMaxDriftMs = 2000;
+
     void loadStations();
     void retune();
+    int64_t localMs();
     void trackSchedule(int64_t nowMs);
+    void syncPlayer(int64_t nowMs);
+    void renderAudio();
     void render();
 
     Platform& p_;
+    StationPlayer player_;
+    Mixer mixer_;
+    int playerStation_ = -1;
+    int16_t stationBuf_[kAudioBlock] = {};
+    int16_t outBuf_[kAudioBlock] = {};
+    // Sub-second wall clock: Clock::now() has 1 s resolution.
+    int64_t lastSec_ = INT64_MIN;
+    uint32_t secStartMillis_ = 0;
+
     Framebuffer fb_;
     RadioConfig config_;
     std::vector<Station> stations_;
