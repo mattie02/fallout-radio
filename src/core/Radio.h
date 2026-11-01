@@ -32,6 +32,16 @@ public:
         uint32_t offsetMs = 0;
     };
 
+    // Audio diagnostics, accumulated since the last call to audioStats().
+    struct AudioStats {
+        bool decoderOpen = false;
+        int sampleRate = 0;          // as decoded from the current file
+        uint32_t framesRendered = 0;
+        float stationPeak = 0;       // 0..1, decoded station audio before mixing
+        float outputPeak = 0;        // 0..1, after mixing and effects
+    };
+    AudioStats audioStats();
+
     explicit Radio(Platform& platform) : p_(platform), player_(platform.storage) {}
 
     bool begin();
@@ -39,6 +49,10 @@ public:
     void update();
     // Re-reads /system/config.json (signal and audio settings).
     void reloadConfig();
+    // Moves the dial (clamped to the dial range), as if turned there.
+    void tuneTo(float mhz);
+    // Overrides the master volume (0..1) until the config is reloaded.
+    void setVolume(float volume);
 
     // Dial position in tenths of MHz.
     int dial() const { return dial_; }
@@ -57,7 +71,6 @@ private:
     void loadStations();
     void retune();
     int64_t localMs();
-    void trackSchedule(int64_t nowMs);
     void syncPlayer(int64_t nowMs);
     void renderAudio();
     void render();
@@ -68,6 +81,9 @@ private:
     int playerStation_ = -1;
     int16_t stationBuf_[kAudioBlock] = {};
     int16_t outBuf_[kAudioBlock] = {};
+    uint32_t statFrames_ = 0;
+    int statStationPeak_ = 0;
+    int statOutputPeak_ = 0;
     // Sub-second wall clock: Clock::now() has 1 s resolution.
     int64_t lastSec_ = INT64_MIN;
     uint32_t secStartMillis_ = 0;
@@ -82,12 +98,9 @@ private:
     int dialMin_ = 880;
     int dialMax_ = 1080;
 
-    // Schedule entry currently on air for the tuned station.
-    int entryStation_ = -1;
-    bool haveEntry_ = false;
-    Schedule::Position entry_;
-    int64_t entryStartMs_ = 0;  // local wall-clock ms
-    int64_t entryEndMs_ = 0;
+    // When a schedule lookup last failed (bad file): retry after a pause
+    // rather than hammering storage every update.
+    int64_t lastLookupFailMs_ = INT64_MIN / 2;
 
     bool dirty_ = true;
     int64_t shownMinute_ = -1;

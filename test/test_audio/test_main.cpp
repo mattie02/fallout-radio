@@ -225,6 +225,33 @@ void test_radio_plays_tuned_station() {
     TEST_ASSERT_TRUE(rms(&w[w.size() / 2], w.size() / 2) > 0.02);
 }
 
+void test_song_change_reads_schedule_once() {
+    // Crossing an entry boundary must not re-search the schedule: on an SD
+    // card each scattered read is slow, and a search stalls the audio.
+    FakePlatform p;
+    p.storage.files = storage.files;
+    p.storage.files["/stations/01_t/station.json"] = R"({"name": "Tone", "frequency": 98.6})";
+    ScheduleBuilder b;
+    for (int i = 0; i < 200; ++i) b.add(1000, "music/001_tone.mp3");  // a song every second
+    p.storage.files["/stations/01_t/schedule.txt"] = b.build();
+    p.clock.t = 20808LL * 86400;
+    Radio radio(p.platform);
+    radio.begin();
+    p.audio.room = 2048;
+    radio.update();  // starts the station: one search
+    const int afterStart = p.storage.reads["/stations/01_t/schedule.txt"];
+
+    for (int ms = 0; ms < 3000; ms += 50) {  // three boundaries, clock in step
+        p.clock.ms += 50;
+        if (p.clock.ms % 1000 == 0) ++p.clock.t;
+        p.audio.room += kSampleRate / 20;  // 50 ms of audio per 50 ms of clock
+        radio.update();
+    }
+    TEST_ASSERT_EQUAL_UINT32(3000, radio.status().entry.startMs);
+    // One entry read per boundary, no binary searches.
+    TEST_ASSERT_LESS_OR_EQUAL(3, p.storage.reads["/stations/01_t/schedule.txt"] - afterStart);
+}
+
 int main() {
     tone = readFixture(__FILE__, "tone440.mp3");
     if (tone.size() < 10000) {
@@ -243,5 +270,6 @@ int main() {
     RUN_TEST(test_mixer_crossfades_by_signal);
     RUN_TEST(test_mixer_ramps_smoothly);
     RUN_TEST(test_radio_plays_tuned_station);
+    RUN_TEST(test_song_change_reads_schedule_once);
     return UNITY_END();
 }

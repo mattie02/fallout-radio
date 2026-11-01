@@ -5,8 +5,13 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <initializer_list>
+#include <string>
 
 #include "core/CivilTime.h"
 #include "platform/esp32/Pins.h"
@@ -48,12 +53,27 @@ bool Esp32Audio::begin(uint32_t sampleRate) {
     cfg.gpio_cfg.ws = static_cast<gpio_num_t>(pins::kI2sLrc);
     cfg.gpio_cfg.dout = static_cast<gpio_num_t>(pins::kI2sDout);
     cfg.gpio_cfg.din = I2S_GPIO_UNUSED;
-    if (i2s_channel_init_std_mode(tx_, &cfg) != ESP_OK || i2s_channel_enable(tx_) != ESP_OK) {
+    i2s_event_callbacks_t callbacks = {};
+    callbacks.on_send_q_ovf = &Esp32Audio::onUnderrun;
+    if (i2s_channel_init_std_mode(tx_, &cfg) != ESP_OK ||
+        i2s_channel_register_event_callback(tx_, &callbacks, this) != ESP_OK ||
+        i2s_channel_enable(tx_) != ESP_OK) {
         i2s_del_channel(tx_);
         tx_ = nullptr;
         return false;
     }
     return true;
+}
+
+bool IRAM_ATTR Esp32Audio::onUnderrun(i2s_chan_handle_t, i2s_event_data_t*, void* self) {
+    static_cast<Esp32Audio*>(self)->underruns_ = static_cast<Esp32Audio*>(self)->underruns_ + 1;
+    return false;
+}
+
+uint32_t Esp32Audio::takeUnderruns() {
+    const uint32_t n = underruns_;
+    underruns_ = 0;
+    return n;
 }
 
 void Esp32Audio::pump() {
@@ -324,35 +344,70 @@ uint32_t Esp32Clock::millis() { return ::millis(); }
 namespace {
 
 SPIClass sdSpi(FSPI);
+Esp32Storage::Timing sdTiming;
 
+void noteTime(uint32_t& slowest, uint32_t startUs) {
+    const uint32_t took = micros() - startUs;
+    if (took > slowest) slowest = took;
+}
+
+constexpr char kMount[] = "/sd";  // where SD.begin() mounts the card in the VFS
+
+// POSIX file descriptors on the mounted card: each read goes to the FAT
+// driver in one call. (The Arduino File wrapper buffers 4 KB per read, so a
+// 64-byte schedule record cost a full 4 KB card read; unbuffered stdio is
+// worse still, as newlib then reads byte by byte.)
 class SdFile : public File {
 public:
-    explicit SdFile(fs::File f) : f_(f) {}
-    ~SdFile() override { f_.close(); }
-    size_t read(uint8_t* dst, size_t len) override { return f_.read(dst, len); }
-    bool seek(uint32_t pos) override { return f_.seek(pos); }
-    uint32_t position() override { return static_cast<uint32_t>(f_.position()); }
-    uint32_t size() override { return static_cast<uint32_t>(f_.size()); }
+    SdFile(int fd, uint32_t size) : fd_(fd), size_(size) {}
+    ~SdFile() override { ::close(fd_); }
+    size_t read(uint8_t* dst, size_t len) override {
+        const uint32_t start = micros();
+        const ssize_t n = ::read(fd_, dst, len);
+        noteTime(sdTiming.slowestReadUs, start);
+        return n > 0 ? static_cast<size_t>(n) : 0;
+    }
+    bool seek(uint32_t pos) override { return ::lseek(fd_, static_cast<off_t>(pos), SEEK_SET) >= 0; }
+    uint32_t position() override { return static_cast<uint32_t>(::lseek(fd_, 0, SEEK_CUR)); }
+    uint32_t size() override { return size_; }
 
 private:
-    fs::File f_;
+    int fd_;
+    uint32_t size_;
 };
 
 }  // namespace
 
 bool Esp32Storage::begin() {
     sdSpi.begin(pins::kSdSck, pins::kSdMiso, pins::kSdMosi, pins::kSdCs);
-    ok_ = SD.begin(pins::kSdCs, sdSpi, pins::kSdSpiHz);
+    ok_ = SD.begin(pins::kSdCs, sdSpi, pins::kSdSpiHz, kMount);
     return ok_;
 }
 
-bool Esp32Storage::exists(const char* path) { return ok_ && SD.exists(path); }
+bool Esp32Storage::exists(const char* path) {
+    struct stat st;
+    return ok_ && stat((std::string(kMount) + path).c_str(), &st) == 0;
+}
 
 std::unique_ptr<File> Esp32Storage::open(const char* path) {
     if (!ok_) return nullptr;
-    fs::File f = SD.open(path, FILE_READ);
-    if (!f || f.isDirectory()) return nullptr;
-    return std::unique_ptr<File>(new SdFile(f));
+    const uint32_t start = micros();
+    const int fd = ::open((std::string(kMount) + path).c_str(), O_RDONLY);
+    struct stat st;
+    const bool ok = fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode);
+    noteTime(sdTiming.slowestOpenUs, start);
+    ++sdTiming.opens;
+    if (!ok) {
+        if (fd >= 0) ::close(fd);
+        return nullptr;
+    }
+    return std::unique_ptr<File>(new SdFile(fd, static_cast<uint32_t>(st.st_size)));
+}
+
+Esp32Storage::Timing Esp32Storage::takeTiming() {
+    const Timing t = sdTiming;
+    sdTiming = {};
+    return t;
 }
 
 bool Esp32Storage::list(const char* dir, std::vector<std::string>& names) {

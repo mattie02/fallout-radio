@@ -32,6 +32,10 @@ public:
     // Position within the whole schedule.
     uint32_t schedulePositionMs() const { return entry_.startMs + offsetMs(); }
 
+    // Diagnostics.
+    bool decoderOpen() const { return decoder_.isOpen() && !decoder_.atEnd(); }
+    int decodedSampleRate() const { return decoder_.sampleRate(); }
+
 private:
     void openEntry(uint32_t offsetMs);
     void advance();

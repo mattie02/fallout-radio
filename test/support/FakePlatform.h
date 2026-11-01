@@ -62,12 +62,14 @@ struct FakeClock : Clock {
 
 class MemoryFile : public File {
 public:
-    explicit MemoryFile(const std::string& data) : data_(data) {}
+    explicit MemoryFile(const std::string& data, int* fileReads = nullptr)
+        : data_(data), fileReads_(fileReads) {}
     size_t read(uint8_t* dst, size_t len) override {
         const size_t n = pos_ >= data_.size() ? 0 : std::min(len, data_.size() - pos_);
         std::memcpy(dst, data_.data() + pos_, n);
         pos_ += n;
         reads++;
+        if (fileReads_) ++*fileReads_;
         return n;
     }
     bool seek(uint32_t pos) override {
@@ -81,19 +83,21 @@ public:
 
 private:
     const std::string& data_;
+    int* fileReads_;
     size_t pos_ = 0;
 };
 
 // Files keyed by absolute path, e.g. "/stations/01_a/station.json".
 struct MemoryStorage : Storage {
     std::map<std::string, std::string> files;
+    std::map<std::string, int> reads;  // read() calls per path
 
     bool begin() override { return true; }
     bool exists(const char* path) override { return files.count(path) > 0; }
     std::unique_ptr<File> open(const char* path) override {
         auto it = files.find(path);
         if (it == files.end()) return nullptr;
-        return std::make_unique<MemoryFile>(it->second);
+        return std::make_unique<MemoryFile>(it->second, &reads[path]);
     }
     bool list(const char* dir, std::vector<std::string>& names) override {
         const std::string prefix = std::string(dir) + "/";

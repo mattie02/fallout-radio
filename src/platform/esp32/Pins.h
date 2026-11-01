@@ -31,6 +31,9 @@ constexpr int kEncoderCountsPerStep = 4;
 constexpr bool kEncoderReverse = false;
 
 constexpr uint32_t kI2cHz = 400000;
-constexpr uint32_t kSdSpiHz = 20000000;
+// 20 MHz failed mid-stream ("Card Failed! cmd: 0x0d") through the 5 V SD
+// module's level shifter and jumper wires. Playback needs only 16 KB/s;
+// 4 MHz gives ~500 KB/s.
+constexpr uint32_t kSdSpiHz = 4000000;
 
 }  // namespace radio::pins

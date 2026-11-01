@@ -2,15 +2,22 @@
 //
 // Serial (COM/UART port, 115200 baud) commands:
 //   time YYYY-MM-DD HH:MM[:SS]   set the RTC (recipient's local time)
+//   tune MHZ                     move the dial, e.g. "tune 91.5"
 //   status                       print time, tuning and what's playing
 
 #include <Arduino.h>
 
+#include <cstdlib>
 #include <cstring>
 
 #include "core/CivilTime.h"
 #include "core/Radio.h"
 #include "platform/esp32/Esp32Platform.h"
+
+// minimp3 keeps ~16 KB of scratch on the stack while decoding a frame; the
+// default 8 KB loop task stack overflows (and the board resets) on the first
+// decode.
+SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
 namespace {
 
@@ -42,7 +49,29 @@ void printStatus() {
                           s.offsetMs / 1000 % 60);
         }
     }
-    Serial.printf("\nfree heap: %u bytes\n", static_cast<unsigned>(ESP.getFreeHeap()));
+    Serial.printf("\nfree heap: %u bytes, loop stack never used: %u bytes\n",
+                  static_cast<unsigned>(ESP.getFreeHeap()),
+                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+}
+
+// Loop timing, reset by printAudio().
+uint32_t loopCount = 0;
+uint32_t slowestLoopUs = 0;
+uint32_t statsSinceMs = 0;
+
+void printAudio() {
+    const radio::Radio::AudioStats a = radioApp.audioStats();
+    const uint32_t ms = millis() - statsSinceMs;
+    Serial.printf("audio over %u ms: rendered %u frames (%.0f/s, need 44100/s), underruns %u\n", ms,
+                  a.framesRendered, ms ? a.framesRendered * 1000.0 / ms : 0.0, audio.takeUnderruns());
+    Serial.printf("  decoder %s, %d Hz, station peak %.3f, output peak %.3f\n",
+                  a.decoderOpen ? "open" : "CLOSED", a.sampleRate, a.stationPeak, a.outputPeak);
+    Serial.printf("  loop: %u passes, slowest %u us\n", loopCount, slowestLoopUs);
+    const radio::Esp32Storage::Timing sd = storage.takeTiming();
+    Serial.printf("  sd: %u opens, slowest open %u us, slowest read %u us\n", sd.opens,
+                  sd.slowestOpenUs, sd.slowestReadUs);
+    loopCount = slowestLoopUs = 0;
+    statsSinceMs = millis();
 }
 
 void runCommand(const char* line) {
@@ -56,8 +85,16 @@ void runCommand(const char* line) {
         printTime();
     } else if (std::strcmp(line, "status") == 0) {
         printStatus();
+    } else if (std::strcmp(line, "audio") == 0) {
+        printAudio();
+    } else if (std::strncmp(line, "volume ", 7) == 0) {
+        radioApp.setVolume(static_cast<float>(std::atof(line + 7)));
+        Serial.printf("volume %.2f\n", std::atof(line + 7));
+    } else if (std::strncmp(line, "tune ", 5) == 0) {
+        radioApp.tuneTo(static_cast<float>(std::atof(line + 5)));
+        printStatus();
     } else {
-        Serial.println("commands: time YYYY-MM-DD HH:MM[:SS] | status");
+        Serial.println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio");
     }
 }
 
@@ -96,6 +133,10 @@ void setup() {
 }
 
 void loop() {
+    const uint32_t start = micros();
     radioApp.update();
+    const uint32_t took = micros() - start;
+    ++loopCount;
+    if (took > slowestLoopUs) slowestLoopUs = took;
     pollSerial();
 }
