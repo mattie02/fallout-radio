@@ -133,7 +133,7 @@ Static is **generated in code** (filtered noise), not stored as files.
 
 ## Conventions
 
-- `core/` never includes Arduino, ESP-IDF or SDL headers. If something needs hardware, add an interface to `Platform.h`.
+- `core/` never includes Arduino, ESP-IDF or SDL headers. If something needs hardware, add an interface to `Platform.h`. Exception: ArduinoJson, which is portable C++ and used on both targets for the JSON config files.
 - Never block the audio path. `Radio::update()` is called often; the display only redraws on change.
 - Keep the desktop and ESP32 builds both compiling at all times.
 - Prefer small, testable pieces. Schedule lookup and Tuner math should have unit tests (`pio test -e desktop`).

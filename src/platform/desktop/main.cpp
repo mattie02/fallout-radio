@@ -25,6 +25,37 @@ namespace {
 constexpr double kSpeeds[] = {1, 10, 60, 600, 3600, 86400};
 constexpr int kSpeedCount = sizeof(kSpeeds) / sizeof(kSpeeds[0]);
 
+std::string mmss(uint32_t ms) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%u:%02u", ms / 60000, ms / 1000 % 60);
+    return buf;
+}
+
+// "91.5 MHz | Crooner Ballads 100% | music/012_x.mp3 1:23/3:05 | Thu 2026-12-24 23:58:00 x1"
+std::string statusLine(const radio::Radio& radio, radio::DesktopClock& clock) {
+    const radio::Radio::Status s = radio.status();
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%.1f MHz", s.dialMhz);
+    std::string line = buf;
+    if (s.station >= 0) {
+        const auto& station = radio.stations()[s.station];
+        std::snprintf(buf, sizeof(buf), " %d%%", static_cast<int>(s.signal * 100 + 0.5f));
+        line += "  |  " + station.info.name + buf + "  |  ";
+        if (s.playing) {
+            line += s.entry.isSilence() ? std::string("(silence)") : std::string(s.entry.path);
+            line += " " + mmss(s.offsetMs) + "/" + mmss(s.entry.durationMs);
+        } else {
+            line += station.schedule.isOpen() ? "(lookup failed)" : "(no schedule.txt)";
+        }
+    } else {
+        line += "  |  static";
+    }
+    std::snprintf(buf, sizeof(buf), " x%g", clock.speed());
+    line += "  |  " + radio::DesktopClock::format(clock.now()) + buf;
+    if (clock.paused()) line += " PAUSED";
+    return line;
+}
+
 void usage() {
     std::fprintf(stderr, "usage: program [--content DIR] [--time \"YYYY-MM-DD HH:MM[:SS]\"]\n");
 }
@@ -109,12 +140,7 @@ int main(int argc, char** argv) {
 
             const uint32_t ms = clock.millis();
             if (static_cast<int32_t>(ms - nextTitle) >= 0) {
-                char title[128];
-                std::snprintf(title, sizeof(title), "Vintage Radio  |  %d.%d MHz  |  %s  x%g%s",
-                              radio.dial() / 10, radio.dial() % 10,
-                              radio::DesktopClock::format(clock.now()).c_str(), clock.speed(),
-                              clock.paused() ? "  PAUSED" : "");
-                display.setTitle(title);
+                display.setTitle(statusLine(radio, clock));
                 nextTitle = ms + 200;
             }
 

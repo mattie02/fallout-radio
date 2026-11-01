@@ -92,6 +92,7 @@ public:
     bool begin() override;
     bool exists(const char* path) override;
     std::unique_ptr<File> open(const char* path) override;
+    bool list(const char* dir, std::vector<std::string>& names) override;
 
 private:
     std::string resolve(const char* path) const;

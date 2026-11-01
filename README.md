@@ -37,4 +37,4 @@ Station rules live in `content/stations/*/station.json`. See [tools/prep/README.
 | R | Back to real time |
 | Esc | Quit |
 
-The window title shows the frequency and the simulated date and time. `--content` defaults to `./content`.
+The window title shows what the radio is doing: frequency, the station in range and its signal strength, the file playing on it with the position (e.g. `music/012_blue_moon.mp3 1:23/3:05`), and the simulated date, time and speed. Use it with the clock keys to check schedules. `--content` defaults to `./content`.

@@ -45,4 +45,6 @@ bool Esp32Storage::exists(const char*) { return false; }
 
 std::unique_ptr<File> Esp32Storage::open(const char*) { return nullptr; }
 
+bool Esp32Storage::list(const char*, std::vector<std::string>&) { return false; }
+
 }  // namespace radio

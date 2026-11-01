@@ -1,23 +1,27 @@
 #include "core/Radio.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <string>
 
 namespace radio {
 
 namespace {
 
 constexpr uint32_t kPressFlashMs = 120;
+// If a lookup fails (bad file), wait this long before trying again.
+constexpr int64_t kLookupRetryMs = 1000;
 
-// Dial scale geometry on the 128x32 panel.
+// Display layout on the 128x32 panel.
+constexpr int kNameY = 16;
 constexpr int kScaleLeft = 2;
 constexpr int kScaleRight = Framebuffer::kWidth - 3;
 constexpr int kScaleBottom = Framebuffer::kHeight - 1;
-constexpr int kNeedleTop = 18;
+constexpr int kNeedleTop = 25;
+constexpr int kMeterBars = 5;
 
-int dialToX(int dial) {
-    return kScaleLeft + (dial - Radio::kDialMin) * (kScaleRight - kScaleLeft) /
-                            (Radio::kDialMax - Radio::kDialMin);
-}
+int tenths(float mhz) { return static_cast<int>(std::lround(mhz * 10.0f)); }
 
 }  // namespace
 
@@ -26,21 +30,77 @@ bool Radio::begin() {
     ok &= p_.display.begin();
     ok &= p_.input.begin();
     ok &= p_.clock.begin();
-    ok &= p_.storage.begin();
+    const bool storageOk = p_.storage.begin();
+    ok &= storageOk;
     ok &= p_.audio.begin(kSampleRate);
+
+    if (storageOk) {
+        loadRadioConfig(p_.storage, config_);
+        loadStations();
+    }
+    dialMin_ = tenths(config_.dialMinMhz);
+    dialMax_ = std::max(dialMin_, tenths(config_.dialMaxMhz));
+    dial_ = std::min(std::max(dial_, dialMin_), dialMax_);
+    tuner_.setSignal(config_.lockMhz, config_.fadeMhz);
+    retune();
     dirty_ = true;
     return ok;
+}
+
+void Radio::loadStations() {
+    std::vector<std::string> dirs;
+    if (!p_.storage.list("/stations", dirs)) return;
+    std::sort(dirs.begin(), dirs.end());
+    for (const auto& dir : dirs) {
+        Station s;
+        if (!loadStationInfo(p_.storage, dir, s.info)) continue;
+        s.schedule.open(p_.storage, ("/stations/" + dir + "/schedule.txt").c_str());
+        stations_.push_back(std::move(s));
+    }
+    std::stable_sort(stations_.begin(), stations_.end(), [](const Station& a, const Station& b) {
+        return a.info.frequencyMhz < b.info.frequencyMhz;
+    });
+    std::vector<float> freqs;
+    for (const auto& s : stations_) freqs.push_back(s.info.frequencyMhz);
+    tuner_.setStations(std::move(freqs));
+}
+
+void Radio::retune() {
+    const Tuner::Result r = tuner_.tune(dialMhz());
+    if (r.station != tuned_.station || r.signal != tuned_.signal) dirty_ = true;
+    tuned_ = r;
+}
+
+void Radio::trackSchedule(int64_t nowMs) {
+    if (tuned_.station < 0) {
+        haveEntry_ = false;
+        entryStation_ = -1;
+        return;
+    }
+    const bool stale = entryStation_ != tuned_.station || nowMs < entryStartMs_ ||
+                       nowMs >= entryEndMs_;
+    if (!stale) return;
+
+    entryStation_ = tuned_.station;
+    Schedule& schedule = stations_[tuned_.station].schedule;
+    haveEntry_ = schedule.isOpen() && schedule.lookup(nowMs, entry_);
+    if (haveEntry_) {
+        entryStartMs_ = nowMs - entry_.offsetMs;
+        entryEndMs_ = entryStartMs_ + entry_.entry.durationMs;
+    } else {
+        entryStartMs_ = nowMs;
+        entryEndMs_ = nowMs + kLookupRetryMs;
+    }
 }
 
 void Radio::update() {
     const InputState in = p_.input.read();
     if (in.dialSteps != 0) {
-        int d = dial_ + in.dialSteps;
-        if (d < kDialMin) d = kDialMin;
-        if (d > kDialMax) d = kDialMax;
+        const int d = std::min(std::max(dial_ + in.dialSteps, dialMin_), dialMax_);
         if (d != dial_) {
             dial_ = d;
             dirty_ = true;
+            retune();
         }
     }
 
@@ -54,9 +114,10 @@ void Radio::update() {
         dirty_ = true;
     }
 
-    const int64_t minute = p_.clock.now() / 60;
-    if (minute != shownMinute_) {
-        shownMinute_ = minute;
+    const int64_t now = p_.clock.now();
+    trackSchedule(now * 1000);
+    if (now / 60 != shownMinute_) {
+        shownMinute_ = now / 60;
         dirty_ = true;
     }
 
@@ -66,9 +127,24 @@ void Radio::update() {
     }
 }
 
+Radio::Status Radio::status() const {
+    Status s;
+    s.dialMhz = dialMhz();
+    s.station = tuned_.station;
+    s.signal = tuned_.signal;
+    if (haveEntry_ && entryStation_ == tuned_.station) {
+        s.playing = true;
+        s.entry = entry_.entry;
+        const int64_t off = p_.clock.now() * 1000 - entryStartMs_;
+        s.offsetMs = static_cast<uint32_t>(std::min<int64_t>(
+            std::max<int64_t>(off, 0), entry_.entry.durationMs));
+    }
+    return s;
+}
+
 void Radio::render() {
     fb_.clear();
-    char text[16];
+    char text[24];
 
     // Frequency, large, top left.
     std::snprintf(text, sizeof(text), "%d.%d", dial_ / 10, dial_ % 10);
@@ -77,18 +153,34 @@ void Radio::render() {
 
     // Clock, top right.
     const int64_t secOfDay = ((shownMinute_ * 60) % 86400 + 86400) % 86400;
-    std::snprintf(text, sizeof(text), "%02d:%02d",
-                  static_cast<int>(secOfDay / 3600),
+    std::snprintf(text, sizeof(text), "%02d:%02d", static_cast<int>(secOfDay / 3600),
                   static_cast<int>(secOfDay / 60 % 60));
     fb_.drawText(Framebuffer::kWidth - Framebuffer::textWidth(text) + 1, 0, text);
 
-    // Dial scale: baseline, a tick per MHz (taller every 5), and the needle.
-    fb_.hLine(kScaleLeft, kScaleBottom, kScaleRight - kScaleLeft + 1);
-    for (int mhz = kDialMin; mhz <= kDialMax; mhz += 10) {
-        const int h = (mhz % 50 == 0) ? 5 : 3;
-        fb_.vLine(dialToX(mhz), kScaleBottom - h, h);
+    // Signal meter under the clock: bars of rising height.
+    const int lit = static_cast<int>(std::lround(tuned_.signal * kMeterBars));
+    for (int i = 0; i < kMeterBars; ++i) {
+        const int bx = Framebuffer::kWidth - kMeterBars * 4 + i * 4;
+        const int h = i + 1;
+        if (i < lit) fb_.fillRect(bx, 14 - h, 3, h);
+        else fb_.hLine(bx, 13, 3);
     }
-    fb_.vLine(dialToX(dial_), kNeedleTop, kScaleBottom - kNeedleTop + 1);
+
+    // Station name.
+    if (tuned_.station >= 0) {
+        std::snprintf(text, sizeof(text), "%.21s", stations_[tuned_.station].info.name.c_str());
+        fb_.drawText(0, kNameY, text);
+    }
+
+    // Dial scale: baseline, a tick per MHz (taller every 5), the needle.
+    const int span = std::max(dialMax_ - dialMin_, 1);
+    auto toX = [&](int d) { return kScaleLeft + (d - dialMin_) * (kScaleRight - kScaleLeft) / span; };
+    fb_.hLine(kScaleLeft, kScaleBottom, kScaleRight - kScaleLeft + 1);
+    for (int d = (dialMin_ + 9) / 10 * 10; d <= dialMax_; d += 10) {
+        const int h = (d % 50 == 0) ? 4 : 2;
+        fb_.vLine(toX(d), kScaleBottom - h, h);
+    }
+    fb_.vLine(toX(dial_), kNeedleTop, kScaleBottom - kNeedleTop + 1);
 
     if (flashing_) fb_.invert();
     p_.display.show(fb_.data());

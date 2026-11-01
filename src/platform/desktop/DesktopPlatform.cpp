@@ -1,5 +1,6 @@
 #include "platform/desktop/DesktopPlatform.h"
 
+#include <dirent.h>
 #include <sys/stat.h>
 
 #include <cstdio>
@@ -269,6 +270,16 @@ std::unique_ptr<File> DesktopStorage::open(const char* path) {
     std::FILE* f = std::fopen(resolve(path).c_str(), "rb");
     if (!f) return nullptr;
     return std::make_unique<DesktopFile>(f);
+}
+
+bool DesktopStorage::list(const char* dir, std::vector<std::string>& names) {
+    DIR* d = opendir(resolve(dir).c_str());
+    if (!d) return false;
+    while (const dirent* e = readdir(d)) {
+        if (e->d_name[0] != '.') names.emplace_back(e->d_name);
+    }
+    closedir(d);
+    return true;
 }
 
 }  // namespace radio

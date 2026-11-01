@@ -1,0 +1,133 @@
+#pragma once
+
+// In-memory platform for unit tests. Header-only; include from a test suite.
+
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+#include "platform/Platform.h"
+
+namespace radio::test {
+
+struct FakeAudio : AudioOut {
+    bool begin(uint32_t) override { return true; }
+    size_t availableFrames() override { return 0; }
+    size_t write(const int16_t*, size_t) override { return 0; }
+};
+
+struct FakeInput : Input {
+    InputState next;
+    bool begin() override { return true; }
+    InputState read() override {
+        InputState s = next;
+        next = {};
+        return s;
+    }
+};
+
+struct FakeDisplay : Display {
+    uint8_t buf[kDisplayBufferSize] = {};
+    int shows = 0;
+    bool begin() override { return true; }
+    void show(const uint8_t* b) override {
+        std::memcpy(buf, b, sizeof(buf));
+        ++shows;
+    }
+    bool pixel(int x, int y) const { return buf[x + (y / 8) * kDisplayWidth] & (1u << (y % 8)); }
+};
+
+struct FakeClock : Clock {
+    int64_t t = 0;
+    uint32_t ms = 0;
+    bool begin() override { return true; }
+    int64_t now() override { return t; }
+    uint32_t millis() override { return ms; }
+};
+
+class MemoryFile : public File {
+public:
+    explicit MemoryFile(const std::string& data) : data_(data) {}
+    size_t read(uint8_t* dst, size_t len) override {
+        const size_t n = pos_ >= data_.size() ? 0 : std::min(len, data_.size() - pos_);
+        std::memcpy(dst, data_.data() + pos_, n);
+        pos_ += n;
+        reads++;
+        return n;
+    }
+    bool seek(uint32_t pos) override {
+        if (pos > data_.size()) return false;
+        pos_ = pos;
+        return true;
+    }
+    uint32_t position() override { return static_cast<uint32_t>(pos_); }
+    uint32_t size() override { return static_cast<uint32_t>(data_.size()); }
+    static inline int reads = 0;
+
+private:
+    const std::string& data_;
+    size_t pos_ = 0;
+};
+
+// Files keyed by absolute path, e.g. "/stations/01_a/station.json".
+struct MemoryStorage : Storage {
+    std::map<std::string, std::string> files;
+
+    bool begin() override { return true; }
+    bool exists(const char* path) override { return files.count(path) > 0; }
+    std::unique_ptr<File> open(const char* path) override {
+        auto it = files.find(path);
+        if (it == files.end()) return nullptr;
+        return std::make_unique<MemoryFile>(it->second);
+    }
+    bool list(const char* dir, std::vector<std::string>& names) override {
+        const std::string prefix = std::string(dir) + "/";
+        std::set<std::string> found;
+        for (const auto& kv : files) {
+            if (kv.first.compare(0, prefix.size(), prefix) != 0) continue;
+            const std::string rest = kv.first.substr(prefix.size());
+            found.insert(rest.substr(0, rest.find('/')));
+        }
+        names.insert(names.end(), found.begin(), found.end());
+        return !found.empty();
+    }
+};
+
+struct FakePlatform {
+    FakeAudio audio;
+    FakeInput input;
+    FakeDisplay display;
+    FakeClock clock;
+    MemoryStorage storage;
+    Platform platform{audio, input, display, clock, storage};
+};
+
+// Builds a schedule.txt exactly as tools/prep writes it.
+struct ScheduleBuilder {
+    std::vector<std::string> records;
+    uint32_t t = 0;
+
+    ScheduleBuilder& add(uint32_t durationMs, const char* path) {
+        char rec[80];
+        std::snprintf(rec, sizeof(rec), "%09u %08u %-44s\n", t, durationMs, path);
+        records.emplace_back(rec);
+        t += durationMs;
+        return *this;
+    }
+    std::string build() const { return build(t); }
+    std::string build(uint32_t lengthMs) const {
+        char header[80];
+        std::snprintf(header, sizeof(header), "#VRSCHED1 %06u %09u", static_cast<unsigned>(records.size()),
+                      lengthMs);
+        std::string out = header;
+        out.resize(63, ' ');
+        out += '\n';
+        for (const auto& r : records) out += r;
+        return out;
+    }
+};
+
+}  // namespace radio::test

@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace radio {
 
@@ -77,6 +79,9 @@ public:
     virtual bool exists(const char* path) = 0;
     // Returns nullptr if the file can't be opened.
     virtual std::unique_ptr<File> open(const char* path) = 0;
+    // Names (not paths) of the entries in a folder, unsorted, skipping
+    // hidden ones. Returns false if the folder can't be read.
+    virtual bool list(const char* dir, std::vector<std::string>& names) = 0;
 };
 
 struct Platform {
