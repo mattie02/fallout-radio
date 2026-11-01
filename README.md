@@ -22,6 +22,30 @@ python3 tools/prep/prep.py demo   # or: generate placeholder audio first
 
 Station rules live in `content/stations/*/station.json`. See [tools/prep/README.md](tools/prep/README.md).
 
+## Hardware
+
+1. **SD card:** format it FAT32, then copy `content/` onto it so `stations/` and `system/` sit at the card's root. The extras rsync skips are only needed by the prep tool. The `._` files macOS adds are ignored by the radio.
+
+   ```bash
+   rsync -av --delete --exclude='.prep.json' --exclude='clips.json' content/ /Volumes/<CARD>/
+   ```
+
+2. **Flash:** plug into the board's COM/UART port.
+
+   ```bash
+   pio run -e esp32s3 -t upload
+   pio device monitor -e esp32s3
+   ```
+
+3. **Set the clock:** the monitor prints a boot report (time, stations found). If the RTC battery was ever removed, the time starts at the firmware's build time. Set it in the monitor (recipient's local time):
+
+   ```
+   time 2026-12-24 23:58
+   status
+   ```
+
+If the dial moves two stations per click, or turns the wrong way, change `kEncoderCountsPerStep` or `kEncoderReverse` in `src/platform/esp32/Pins.h`.
+
 ## Simulator
 
 ```
