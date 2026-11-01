@@ -10,16 +10,25 @@ The vibe is a 1940s–50s post-apocalyptic radio, inspired by Fallout. All stati
 
 ## Stations
 
-| # | Station | Content |
-|---|---|---|
-| 1 | Crooner ballads | Cheerful DJ, general chatter |
-| 2 | News | News reels, each clip self-contained (secretly about the recipient's life) |
-| 3 | Big band / jazz | Parody ads |
-| 4 | Country / western | Gravelly DJ |
-| 5 | Late-night talk | Recordings of the talk show Coast to Coast AM, whole episodes back to back; no DJ, IDs or ads (`05_talk/shows/`) |
-| 6 | Hidden | Emergency broadcast / numbers station at the far end of the dial, with a personal message |
+| # | Station | MHz | Folder | Content |
+|---|---|---|---|---|
+| 1 | Crooner ballads | 91.5 | `01_crooner` | Cheerful DJ, general chatter |
+| 2 | News | 95.3 | `02_news` | News reels, each clip self-contained (secretly about the recipient's life) |
+| 3 | Big band / jazz | 99.7 | `03_bigband` | Parody ads |
+| 4 | Country / western | 103.1 | `04_country` | Gravelly DJ |
+| 5 | Late Night Talk | 88.9 | `05_talk` | Recordings of the talk show Coast to Coast AM, whole episodes back to back; no DJ, IDs or ads |
+| 6 | Hidden | 107.9 | `99_hidden` | Emergency broadcast / numbers station at the far end of the dial, with a personal message |
 
-DJ clips are general chatter, not intros tied to specific songs.
+DJ clips are general chatter, not intros tied to specific songs. Frequencies live in each `station.json`.
+
+### Late Night Talk (`05_talk`)
+
+- **Content:** full episodes of Coast to Coast AM, put in `source/stations/05_talk/shows/` in any format. The station's on-air name, "Late Night Talk", is original; the recordings themselves are the content.
+- **Rules** (`station.json`): the pattern is a single step, `{ "pick": "shows" }`, so one whole episode plays after another with no breaks. `no_repeat_hours` is 72 for shows, which needs about 72 hours of episodes to hold; with fewer, the prep tool warns and episodes come around sooner.
+- **Order:** random. To play in broadcast order, number the episodes as an arc in `shows/meta.json` (`"arc"` + `"order"`).
+- **Size:** episodes are long (~3 h). At 128 kbps that's ~58 MB per hour, ~173 MB per episode. An 8 GB card holds about 40 episodes plus the music. Schedule entries allow up to 27.7 h, and FAT32 allows 4 GB per file, so length is no problem.
+- **Prep time:** two-pass loudness normalization takes a few minutes per episode hour; the first big batch can take an hour or so. Later runs only convert new files.
+- **Weekly wrap:** the schedule restarts Monday 00:00, cutting whichever episode is playing then.
 
 ---
 
@@ -110,6 +119,10 @@ MP3 decoding should use the same decoder on both targets (for example, the decod
     news/  ids/  music/
   03_bigband/ ...
   04_country/ ...
+  05_talk/
+    station.json
+    schedule.txt
+    shows/               # whole talk-show episodes
   99_hidden/ ...
 ```
 
@@ -155,7 +168,8 @@ Static is **generated in code** (filtered noise), not stored as files.
 
 ## Open decisions
 
-- **Time-of-day programming?** e.g. slower songs late at night, or the hidden station only after midnight. The schedule format already supports it.
+- **Time-of-day programming?** e.g. slower songs late at night, the hidden station only after midnight, or Late Night Talk airing only overnight (the real show ran late at night) and dead air by day. The schedule format already supports it.
+- **Talk episode order:** random for now; broadcast order via a `meta.json` arc if wanted.
 - **News strategy:** self-contained clips for now. Possible later: news at the top of the hour, date-triggered bulletins (birthday, Christmas morning), multi-day story arcs. To keep these possible, the prep tool should accept per-clip metadata (category, optional date, optional arc + order).
 - **Dial range and display style:** FM-style 88–108 vs. an AM-style range; what the OLED shows (frequency, station name, signal meter).
 - **Final power:** USB-C breakout into 5VIN for the finished radio (never at the same time as the board's USB).
