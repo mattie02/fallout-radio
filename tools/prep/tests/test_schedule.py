@@ -105,6 +105,21 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(fair[:6], expected * 2)
         self.assertFalse(any("xmas" in e.path for e in entries))
 
+    def test_long_shows_play_whole(self):
+        # Talk station: 25 three-hour shows back to back, none repeated within 72 h.
+        shows = songs(25, minutes=180, category="shows")
+        rules = {"pattern": [{"pick": "shows"}], "no_repeat_hours": {"shows": 72}}
+        entries = generate(shows, rules, seed=1)
+        self.assert_tiles(entries)
+        for e in entries[:-1]:
+            self.assertEqual(e.duration_ms, 180 * 60 * 1000)
+        last = {}
+        for e in entries[:-1]:
+            if e.path in last:
+                self.assertGreaterEqual(e.start_ms - last[e.path], 72 * HOUR)
+            last[e.path] = e.start_ms
+        self.assertEqual(len(format_schedule(entries)), RECORD_SIZE * (len(entries) + 1))
+
     def test_empty_pattern_errors(self):
         with self.assertRaises(RuleError):
             generate([], {"pattern": [{"pick": "music"}]}, seed=1, length_ms=HOUR)

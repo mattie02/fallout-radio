@@ -1,0 +1,8 @@
+{
+  "name": "Late Night Talk",
+  "frequency": 88.9,
+  "no_repeat_hours": { "shows": 72 },
+  "pattern": [
+    { "pick": "shows" }
+  ]
+}

@@ -16,10 +16,11 @@ LAYOUT = {
     "02_news": {"news": (5, 30, 60), "ids": (2, 5, 8), "music": (3, 90, 150)},
     "03_bigband": {"music": (6, 90, 180), "ids": (2, 5, 8), "ads": (3, 25, 35)},
     "04_country": {"music": (6, 90, 180), "ids": (2, 5, 8), "dj": (3, 15, 30)},
+    "05_talk": {"shows": (3, 300, 600)},
     "99_hidden": {"broadcast": (2, 20, 40)},
 }
 
-SPEECH = {"dj", "ads", "news", "broadcast"}
+SPEECH = {"dj", "ads", "news", "broadcast", "shows"}
 
 
 def _source_filter(category: str, rng: random.Random, seconds: int) -> str:

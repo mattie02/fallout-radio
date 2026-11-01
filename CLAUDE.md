@@ -16,7 +16,8 @@ The vibe is a 1940s–50s post-apocalyptic radio, inspired by Fallout. All stati
 | 2 | News | News reels, each clip self-contained (secretly about the recipient's life) |
 | 3 | Big band / jazz | Parody ads |
 | 4 | Country / western | Gravelly DJ |
-| 5 | Hidden | Emergency broadcast / numbers station at the far end of the dial, with a personal message |
+| 5 | Late-night talk | Recordings of the talk show Coast to Coast AM, whole episodes back to back; no DJ, IDs or ads (`05_talk/shows/`) |
+| 6 | Hidden | Emergency broadcast / numbers station at the far end of the dial, with a personal message |
 
 DJ clips are general chatter, not intros tied to specific songs.
 
