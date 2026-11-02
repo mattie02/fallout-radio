@@ -8,6 +8,7 @@ namespace radio {
 
 namespace {
 constexpr float kPi = 3.14159265f;
+constexpr float kKnobSmoothing = 1.0f / (0.05f * kSampleRate);  // ~50 ms
 }  // namespace
 
 // --- Biquad ------------------------------------------------------------------
@@ -90,11 +91,17 @@ void VintageEffects::configure(const AudioConfig& config) {
     volume_ = std::fmin(std::fmax(config.volume, 0.0f), 1.0f);
 }
 
+void VintageEffects::setKnobGain(float gain, bool immediate) {
+    knobTarget_ = std::fmin(std::fmax(gain, 0.0f), 1.0f);
+    if (immediate) knob_ = knobTarget_;
+}
+
 float VintageEffects::process(float x) {
     x = highpass_.process(x);
     x = lowpass2_.process(lowpass1_.process(x));
     x = softClip(x * drive_) * makeup_;
-    return x * volume_;
+    knob_ += kKnobSmoothing * (knobTarget_ - knob_);
+    return x * volume_ * knob_;
 }
 
 }  // namespace radio

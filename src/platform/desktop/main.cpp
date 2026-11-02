@@ -50,6 +50,10 @@ std::string statusLine(const radio::Radio& radio, radio::DesktopClock& clock) {
     } else {
         line += "  |  static";
     }
+    if (s.knob >= 0) {
+        std::snprintf(buf, sizeof(buf), "  |  vol %d%%", static_cast<int>(s.knob * 100 + 0.5f));
+        line += buf;
+    }
     std::snprintf(buf, sizeof(buf), " x%g", clock.speed());
     line += "  |  " + radio::DesktopClock::format(clock.now()) + buf;
     if (clock.paused()) line += " PAUSED";

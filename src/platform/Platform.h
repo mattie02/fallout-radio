@@ -30,10 +30,11 @@ public:
     virtual size_t write(const int16_t* samples, size_t frames) = 0;
 };
 
-// Encoder input accumulated since the previous read().
+// Encoder input accumulated since the previous read(), plus the volume knob.
 struct InputState {
     int dialSteps = 0;     // + clockwise, - counter-clockwise
     bool pressed = false;  // button was pressed at least once
+    float knob = -1;       // volume knob position 0..1; -1 = no new reading
 };
 
 class Input {

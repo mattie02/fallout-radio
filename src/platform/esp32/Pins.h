@@ -22,6 +22,8 @@ constexpr int kI2sBclk = 5;
 constexpr int kI2sLrc = 6;
 constexpr int kI2sDout = 7;
 
+constexpr int kVolumePot = 4;  // wiper; ADC1, ends to 3V3 and GND
+
 constexpr int kOledAddress = 0x3C;
 constexpr int kRtcAddress = 0x68;
 

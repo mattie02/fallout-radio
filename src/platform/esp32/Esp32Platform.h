@@ -2,7 +2,8 @@
 
 // ESP32-S3 platform layer. Pin assignments live in Pins.h.
 //   Audio:   I2S (ESP-IDF 5 std driver) -> MAX98357A
-//   Input:   KY-040 encoder on the PCNT hardware counter + debounced button
+//   Input:   KY-040 encoder on the PCNT hardware counter + debounced button,
+//            volume pot on the ADC
 //   Display: SSD1306 128x32 over I2C (minimal driver, no library)
 //   Clock:   DS3231 over I2C, read occasionally and extrapolated with millis()
 //   Storage: SD card over SPI
@@ -54,6 +55,7 @@ private:
     int remainder_ = 0;
     bool rawPressed_ = false, stablePressed_ = false;
     uint32_t rawChangedMs_ = 0;
+    uint32_t nextKnobMs_ = 0;
 };
 
 class Esp32Display : public Display {

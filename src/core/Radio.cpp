@@ -215,6 +215,10 @@ Radio::AudioStats Radio::audioStats() {
 
 void Radio::update() {
     const InputState in = p_.input.read();
+    if (in.knob >= 0) {
+        const bool first = knob_.level() < 0;
+        if (knob_.update(in.knob)) mixer_.setKnobGain(knob_.gain(), first);
+    }
     if (in.dialSteps != 0) {
         const int d = std::min(std::max(dial_ + in.dialSteps, dialMin_), dialMax_);
         if (d != dial_) {
@@ -255,6 +259,7 @@ Radio::Status Radio::status() const {
     s.dialMhz = dialMhz();
     s.station = tuned_.station;
     s.signal = tuned_.signal;
+    s.knob = knob_.level();
     if (player_.active() && playerStation_ == tuned_.station) {
         s.playing = true;
         s.entry = player_.entry();

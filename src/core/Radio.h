@@ -10,6 +10,7 @@
 #include "core/Schedule.h"
 #include "core/StationPlayer.h"
 #include "core/Tuner.h"
+#include "core/VolumeKnob.h"
 #include "platform/Platform.h"
 
 namespace radio {
@@ -32,6 +33,7 @@ public:
         bool playing = false;  // a schedule entry is known for the station
         Schedule::Entry entry;
         uint32_t offsetMs = 0;
+        float knob = -1;  // volume knob level 0..1, -1 if no knob reading yet
     };
 
     // Audio diagnostics, accumulated since the last call to audioStats().
@@ -54,7 +56,8 @@ public:
     void reloadConfig();
     // Moves the dial (clamped to the dial range), as if turned there.
     void tuneTo(float mhz);
-    // Overrides the master volume (0..1) until the config is reloaded.
+    // Overrides the master volume (0..1) until the config is reloaded. The
+    // volume knob scales this: full turn = master volume.
     void setVolume(float volume);
 
     // Dial position in tenths of MHz.
@@ -99,6 +102,7 @@ private:
     std::vector<Station> stations_;
     Tuner tuner_;
     Tuner::Result tuned_;
+    VolumeKnob knob_;
 
     int dial_ = 986;
     int dialMin_ = 880;

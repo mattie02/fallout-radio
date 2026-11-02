@@ -49,6 +49,7 @@ void printStatus() {
                           s.offsetMs / 1000 % 60);
         }
     }
+    if (s.knob >= 0) Serial.printf("\nvolume knob: %d%%", static_cast<int>(s.knob * 100 + 0.5f));
     Serial.printf("\nfree heap: %u bytes, loop stack never used: %u bytes\n",
                   static_cast<unsigned>(ESP.getFreeHeap()),
                   static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));

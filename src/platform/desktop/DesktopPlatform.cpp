@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 
@@ -48,6 +49,7 @@ size_t DesktopAudio::write(const int16_t* samples, size_t frames) {
 InputState DesktopInput::read() {
     InputState s = pending_;
     pending_ = {};
+    s.knob = knob_;
     return s;
 }
 
@@ -64,6 +66,8 @@ bool DesktopInput::handleEvent(const SDL_Event& e) {
             switch (e.key.keysym.sym) {
                 case SDLK_LEFT: pending_.dialSteps -= step; return true;
                 case SDLK_RIGHT: pending_.dialSteps += step; return true;
+                case SDLK_UP: knob_ = std::fmin(knob_ + 0.05f, 1.0f); return true;
+                case SDLK_DOWN: knob_ = std::fmax(knob_ - 0.05f, 0.0f); return true;
                 case SDLK_SPACE:
                     if (!e.key.repeat) pending_.pressed = true;
                     return true;

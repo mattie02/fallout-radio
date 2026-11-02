@@ -122,6 +122,8 @@ bool Esp32Input::begin() {
     pinMode(pins::kEncoderA, INPUT_PULLUP);
     pinMode(pins::kEncoderB, INPUT_PULLUP);
     pinMode(pins::kEncoderSw, INPUT_PULLUP);
+    analogReadResolution(12);
+    analogSetPinAttenuation(pins::kVolumePot, ADC_11db);  // full 0..3.3 V range
 
     // Full quadrature (x4) decoding, as in the ESP-IDF rotary encoder example.
     pcnt_unit_config_t unit = {};
@@ -176,6 +178,15 @@ InputState Esp32Input::read() {
     } else if (raw != stablePressed_ && now - rawChangedMs_ >= 25) {
         stablePressed_ = raw;
         s.pressed = raw;
+    }
+
+    // Volume pot: an averaged reading every 20 ms (each analogRead takes
+    // ~10 us, so this costs well under 1% of the loop).
+    if (static_cast<int32_t>(now - nextKnobMs_) >= 0) {
+        nextKnobMs_ = now + 20;
+        uint32_t sum = 0;
+        for (int i = 0; i < 8; ++i) sum += analogRead(pins::kVolumePot);
+        s.knob = sum / (8 * 4095.0f);
     }
     return s;
 }

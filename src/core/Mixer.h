@@ -16,6 +16,8 @@ public:
     void configure(const AudioConfig& config);
     // station: `count` mono samples (may be silence); signal: 0..1 target.
     void render(const int16_t* station, float signal, int16_t* out, size_t count);
+    // Volume knob gain 0..1; see VintageEffects::setKnobGain.
+    void setKnobGain(float gain, bool immediate) { effects_.setKnobGain(gain, immediate); }
 
     float smoothedSignal() const { return signal_; }
 

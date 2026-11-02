@@ -38,7 +38,9 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 - **Display:** 0.91" SSD1306 128×32, I2C, address 0x3C
 - **Input:** rotary encoder with push button (KY-040 style)
 - **Storage:** micro SD module (SPI, onboard regulator and level shifter, so it **must be powered from 5V**)
-- **Audio:** MAX98357A I2S amp → single 4–8 Ω speaker (mono)
+- **Audio:** MAX98357A I2S amp, 5-pin board (G, V, BCL, LRC, DIN) → single 4–8 Ω speaker (mono)
+- **Volume / power:** 10k linear pot with a built-in on/off switch (SW1)
+- **Power input:** USB-C breakout (5.1 kΩ CC resistors) from a 5V ≥2A USB-C charger
 - **Clock:** DS3231 + AT24C32 (ZS-042 board) with a CR2032; the charging resistor has been removed. DS3231 at 0x68, EEPROM at 0x57 (unused)
 
 ### Pin map
@@ -57,10 +59,36 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 | I2S BCLK | 5 | |
 | I2S LRC (WS) | 6 | |
 | I2S DOUT → amp DIN | 7 | |
+| Volume pot wiper | 4 | ADC1 (works with Wi-Fi on); pot ends to 3V3 and GND; 0.1 µF from wiper to GND |
 
-Power: OLED, encoder and RTC run from **3V3**. The SD module and amp VIN run from **5VIN**. All grounds are shared. Amp GAIN and SD pins are left floating (9 dB gain, mono L+R mix).
+Power: a USB-C charger (5V, 2A or more) feeds a USB-C breakout (with 5.1 kΩ CC resistors). Its 5V goes through **SW1, the on/off switch built into the volume pot**, to the 5V rail: 5VIN, amp V and SD VCC. Ground is never switched. OLED, encoder, RTC and the volume pot run from **3V3**. All grounds are shared. The amp is a 5-pin MAX98357A board (G, V, BCL, LRC, DIN) with gain and channel mode fixed on the board. Bulk capacitors: C1 1000 µF across amp V/G, C2 100 µF across SD VCC/GND.
 
-**Pins to avoid:** 0, 3, 45, 46 (strapping pins); 19 and 20 (native USB); 26–32 (flash); 33–37 (octal PSRAM on N8R8/N16R8 modules); 43 and 44 (UART0 / COM port).
+**Pins to avoid:** 0, 3, 45, 46 (strapping pins); 19 and 20 (native USB); 26–32 (flash); 33–37 (octal PSRAM on N8R8/N16R8 modules); 43 and 44 (UART0 / COM port); 38 and 48 (onboard RGB LED on DevKitC-1 boards).
+
+### Controls
+
+- **Volume pot (10k linear, with switch):** clicks the radio on at the bottom of its travel. Firmware reads GPIO 4, averages and applies hysteresis, treats the ends as hard 0% and 100%, and maps position to volume with a logarithmic (perceptual) curve. There is no other volume control.
+- **Rotary encoder:** tuning only. There's no physical dial pointer; the OLED is the dial. Save the last dial position to NVS (ESP32 flash) a few seconds after tuning stops, and restore it on boot. The encoder button is free for another feature.
+- **Power cycling is normal use:** the pot switch cuts all power. Never write to the SD card. Boot fast, fade audio in, and cover the boot time with a warm-up hum. Clock-based stations resume "live" automatically.
+
+### Future expansion: round TFT display (not built yet)
+
+A 1.28" GC9A01 round TFT (240×240, RGB, 4-wire SPI) is planned, likely as a round dial face. **Don't use these pins for anything else:**
+
+| TFT pin | GPIO | Notes |
+|---|---|---|
+| SCL (SPI clock) | 39 | "SCL/SDA" on this board mean SPI, not I2C |
+| SDA (SPI MOSI) | 40 | |
+| DC | 41 | |
+| CS | 42 | |
+| RST | 21 | |
+| BLK (backlight) | 14 | PWM brightness via LEDC, if the board has this pin |
+| VCC / GND | 3V3 / GND | |
+
+- It runs on its **own SPI bus (SPI3)**, separate from the SD card's bus, so screen redraws never block SD reads and cause audio dropouts.
+- Library: LovyanGFX (good ESP32-S3 support with Arduino core 3.x). Draw into a sprite (framebuffer in PSRAM) and push only what changed.
+- **Design for it now:** the `Display` interface and UI code must not assume 128×32 monochrome. Keep the "what to show" logic (station, frequency, signal, volume) separate from the "how to draw it" code for each screen, so a round 240×240 color dial can be added without touching `core/`. The desktop simulator should be able to show either screen, so the round dial UI can be designed before the hardware is wired.
+- Remaining spare GPIOs after this: 1, 2, 10 (ADC-capable) and 47. Avoid 38 and 48 (the onboard RGB LED on DevKitC-1 boards).
 
 ---
 
@@ -78,7 +106,7 @@ src/
     Radio          # ties it together; the main state machine
   platform/
     Platform.h     # interfaces: AudioOut, Input, Display, Clock, Storage
-    esp32/         # I2S, encoder (ESP32Encoder / PCNT), SSD1306, DS3231 (RTClib), SD
+    esp32/         # I2S, encoder (ESP32Encoder / PCNT), volume pot (ADC), SSD1306, DS3231 (RTClib), SD, NVS
     desktop/       # audio to speakers, keyboard/mouse dial, scaled 128x32 window, controllable clock, local folder
 tools/
   prep/            # Python content-prep and schedule generator (runs on the Mac)
@@ -95,8 +123,9 @@ MP3 decoding should use the same decoder on both targets (for example, the decod
 ### Desktop simulator controls
 
 - Mouse wheel / ← → : turn the dial. Click / Space : encoder button.
+- ↑ ↓ : volume pot. P : power switch (simulates a full power cycle and boot).
 - **Time controls** (essential for testing the schedule): pause the clock, fast-forward, and jump to a specific date and time (e.g. Dec 24 23:58).
-- Display: the 128×32 framebuffer, drawn scaled up (×4 or more) in the same white-on-black look.
+- Display: the 128×32 framebuffer, drawn scaled up (×4 or more) in the same white-on-black look. Later, optionally the round 240×240 TFT dial (see Future expansion).
 
 ---
 
@@ -162,7 +191,8 @@ Static is **generated in code** (filtered noise), not stored as files.
 4. **Audio:** MP3 playback with seeking, generated static, mixing by signal strength, vintage EQ. Tune by ear on the desktop.
 5. **ESP32 platform layer:** port to hardware (the pin and wiring test sketches already work).
 6. **Polish:** boot sound, display design, the hidden station, special broadcasts.
-7. **Enclosure integration:** 3D-printed case (must fit a Bambu printer), USB-C power input.
+7. **Enclosure integration:** 3D-printed case (must fit a Bambu printer), USB-C power input, volume/power knob.
+8. **Future:** round GC9A01 TFT dial face (pins already reserved).
 
 ---
 
@@ -172,4 +202,4 @@ Static is **generated in code** (filtered noise), not stored as files.
 - **Talk episode order:** random for now; broadcast order via a `meta.json` arc if wanted.
 - **News strategy:** self-contained clips for now. Possible later: news at the top of the hour, date-triggered bulletins (birthday, Christmas morning), multi-day story arcs. To keep these possible, the prep tool should accept per-clip metadata (category, optional date, optional arc + order).
 - **Dial range and display style:** FM-style 88–108 vs. an AM-style range; what the OLED shows (frequency, station name, signal meter).
-- **Final power:** USB-C breakout into 5VIN for the finished radio (never at the same time as the board's USB).
+- **Encoder button:** what it should do (e.g. show the station name and time, or a hidden feature).

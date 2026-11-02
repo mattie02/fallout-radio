@@ -22,8 +22,9 @@ private:
     uint32_t targetQueueFrames_ = 0;
 };
 
-// Mouse wheel / arrow keys turn the dial; click / Space press the button.
-// Shift + arrow turns ten steps at a time.
+// Mouse wheel / left-right arrows turn the dial; click / Space press the
+// button. Shift + arrow turns ten steps at a time. Up / down turn the
+// volume knob.
 class DesktopInput : public Input {
 public:
     bool begin() override { return true; }
@@ -33,6 +34,7 @@ public:
 
 private:
     InputState pending_;
+    float knob_ = 1;
 };
 
 // Draws the 128x32 framebuffer scaled up, white on black, inside a bezel.

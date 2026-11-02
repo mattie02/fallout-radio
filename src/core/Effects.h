@@ -50,6 +50,10 @@ private:
 class VintageEffects {
 public:
     void configure(const AudioConfig& config);
+    // Volume knob gain 0..1, on top of the master volume. Changes are
+    // smoothed (~50 ms) so knob steps never click; `immediate` skips that
+    // (the first reading at boot).
+    void setKnobGain(float gain, bool immediate);
     float process(float x);
 
 private:
@@ -57,6 +61,7 @@ private:
     float drive_ = 1;
     float makeup_ = 1;
     float volume_ = 1;
+    float knob_ = 1, knobTarget_ = 1;
 };
 
 // Saturates smoothly towards +-1 (rational tanh approximation).
