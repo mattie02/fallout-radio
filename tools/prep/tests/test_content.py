@@ -54,6 +54,18 @@ class PlanFolderTest(unittest.TestCase):
             "Blue Moon.wav": "006_blue_moon.mp3",
         })
 
+    def test_dated_names_keep_their_date(self):
+        # A leading year is part of the name, not a chosen position.
+        self.touch("1999-4-21 Coast To Coast AM Cold Fusion.mp3")
+        self.touch("2000-11-2 Coast To Coast AM Destiny.mp3")
+        self.touch("2000-6-11 Coast To Coast AM King Arthur.mp3")
+        self.assertEqual(sorted(self.plan().values()), [
+            # "music/" + "NNN_" + ".mp3" leaves 30 characters for the name
+            "001_1999_4_21_coast_to_coast_am_co.mp3",
+            "002_2000_11_2_coast_to_coast_am_de.mp3",
+            "003_2000_6_11_coast_to_coast_am_ki.mp3",
+        ])
+
     def test_names_stable_and_unchanged_files_skipped(self):
         self.touch("b.wav")
         self.plan()

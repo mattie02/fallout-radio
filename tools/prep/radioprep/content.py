@@ -96,7 +96,9 @@ def plan_folder(src_dir: Path, dst_dir: Path, rel: Path, log) -> list[Job]:
         entry = manifest.get(src.name)
         if entry is None:
             if numbered:
-                m = re.match(r"(\d+)[ _-]+(.*)", src.stem)
+                # 1-3 digits = a chosen position ("05 Stardust"). Longer runs
+                # are part of the name, e.g. a date ("1999-4-21 Show").
+                m = re.match(r"(\d{1,3})[ _-]+(.*)", src.stem)
                 if m and int(m.group(1)) not in used:
                     number, stem = int(m.group(1)), sanitize(m.group(2))
                 else:
