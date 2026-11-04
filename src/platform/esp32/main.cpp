@@ -4,7 +4,7 @@
 //   time YYYY-MM-DD HH:MM[:SS]   set the RTC (recipient's local time)
 //   tune MHZ                     move the dial, e.g. "tune 91.5"
 //   status                       print time, tuning and what's playing
-//   display                      print round display stats
+//   display                      print stats for both screens
 
 #include <Arduino.h>
 
@@ -28,8 +28,7 @@ radio::Esp32Input input;
 radio::Esp32Oled oled;
 radio::Esp32Tft tft;
 
-// Either screen can be missing: an absent OLED is detected and skipped, and the
-// TFT has no way to answer, so it just draws.
+// The round TFT shows the dial, the OLED the audio.
 class Screens : public radio::Display {
 public:
     bool begin() override {
@@ -37,10 +36,8 @@ public:
         Serial.printf("OLED: %s\n", hasOled ? "found" : "not found");
         return tft.begin();
     }
-    void show(const radio::DisplayState& state) override {
-        tft.show(state);
-        oled.show(state);
-    }
+    void show(const radio::DisplayState& state) override { tft.show(state); }
+    void audio(const int16_t* samples, size_t count) override { oled.audio(samples, count); }
 };
 
 Screens display;
@@ -101,6 +98,9 @@ void printDisplay() {
     Serial.printf("round display: %s, %u frames, last draw %u us, last push %u us (%u rows)\n",
                   t.ready ? "running" : "NOT RUNNING (no memory for frames?)", t.frames, t.drawUs,
                   t.pushUs, t.rows);
+    const radio::Esp32Oled::Stats o = oled.stats();
+    if (o.present) Serial.printf("waveform: %u frames, last push %u us\n", o.frames, o.pushUs);
+    else Serial.println("waveform: no OLED");
     Serial.printf("psram: %u bytes, %u free\n", static_cast<unsigned>(ESP.getPsramSize()),
                   static_cast<unsigned>(ESP.getFreePsram()));
 }

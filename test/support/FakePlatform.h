@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -44,10 +45,16 @@ struct FakeInput : Input {
 struct FakeDisplay : Display {
     DisplayState state;
     int shows = 0;
+    size_t audioSamples = 0;
+    int audioPeak = 0;
     bool begin() override { return true; }
     void show(const DisplayState& s) override {
         state = s;
         ++shows;
+    }
+    void audio(const int16_t* samples, size_t count) override {
+        audioSamples += count;
+        for (size_t i = 0; i < count; ++i) audioPeak = std::max(audioPeak, std::abs(int(samples[i])));
     }
 };
 

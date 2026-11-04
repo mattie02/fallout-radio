@@ -5,7 +5,7 @@
 // Dial:   mouse wheel, ← →  (Shift for 1 MHz steps)
 // Button: click, Space
 // Clock:  P pause/resume, ] faster, [ slower, R back to real time
-// D switches between the round TFT and the OLED.
+// D switches between the round TFT dial and the OLED waveform.
 // C reloads system/config.json (tune the sound by ear). Esc quits.
 
 // Excluded from `pio test` builds, which bring their own main().
@@ -158,6 +158,7 @@ int main(int argc, char** argv) {
             radio.update();
 
             const uint32_t ms = clock.millis();
+            display.animate(ms);
             if (static_cast<int32_t>(ms - nextTitle) >= 0) {
                 display.setTitle(statusLine(radio, clock));
                 nextTitle = ms + 200;

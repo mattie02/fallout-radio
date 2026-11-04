@@ -7,8 +7,8 @@
 #include <string>
 
 #include "platform/Platform.h"
-#include "ui/Framebuffer.h"
 #include "ui/RoundDial.h"
+#include "ui/Waveform.h"
 
 namespace radio {
 
@@ -40,8 +40,8 @@ private:
 };
 
 // Shows either screen, scaled up, inside a bezel: the round TFT dial (masked to
-// its circle) or the white-on-black 128x32 OLED. Both are drawn by the same code
-// as on the radio.
+// its circle) or the white-on-black 128x32 OLED waveform. Both are drawn by the
+// same code as on the radio.
 class DesktopDisplay : public Display {
 public:
     enum class Screen { Round, Oled };
@@ -50,6 +50,9 @@ public:
     ~DesktopDisplay() override;
     bool begin() override;
     void show(const DisplayState& state) override;
+    void audio(const int16_t* samples, size_t count) override;
+    // Call regularly: keeps the waveform moving when it's on screen.
+    void animate(uint32_t nowMs);
     // Re-presents the last frame (e.g. after the window was exposed).
     void refresh();
     void setTitle(const std::string& title);
@@ -67,6 +70,8 @@ private:
     DisplayState state_;
     RoundDial round_;
     Framebuffer oled_;
+    WaveformCapture capture_;
+    uint32_t nextFrameMs_ = 0;
 };
 
 // Simulated wall clock with pause, speed-up and jump, for testing schedules.

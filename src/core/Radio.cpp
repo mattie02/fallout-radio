@@ -180,7 +180,8 @@ void Radio::renderAudio() {
     size_t avail = p_.audio.availableFrames();
     while (avail >= kAudioBlock) {
         player_.read(stationBuf_, kAudioBlock);
-        mixer_.render(stationBuf_, tuned_.signal, outBuf_, kAudioBlock);
+        mixer_.render(stationBuf_, tuned_.signal, outBuf_, kAudioBlock, beforeVolumeBuf_);
+        p_.display.audio(beforeVolumeBuf_, kAudioBlock);
         for (size_t i = 0; i < kAudioBlock; ++i) {
             statStationPeak_ = std::max(statStationPeak_, std::abs(static_cast<int>(stationBuf_[i])));
             statOutputPeak_ = std::max(statOutputPeak_, std::abs(static_cast<int>(outBuf_[i])));

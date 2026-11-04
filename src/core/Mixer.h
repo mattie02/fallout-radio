@@ -15,7 +15,9 @@ class Mixer {
 public:
     void configure(const AudioConfig& config);
     // station: `count` mono samples (may be silence); signal: 0..1 target.
-    void render(const int16_t* station, float signal, int16_t* out, size_t count);
+    // beforeVolume, if given, receives the same audio without the volume applied.
+    void render(const int16_t* station, float signal, int16_t* out, size_t count,
+                int16_t* beforeVolume = nullptr);
     // Volume knob gain 0..1; see VintageEffects::setKnobGain.
     void setKnobGain(float gain, bool immediate) { effects_.setKnobGain(gain, immediate); }
 

@@ -89,6 +89,7 @@ private:
     int playerStation_ = -1;
     int16_t stationBuf_[kAudioBlock] = {};
     int16_t outBuf_[kAudioBlock] = {};
+    int16_t beforeVolumeBuf_[kAudioBlock] = {};
     uint32_t statFrames_ = 0;
     int statStationPeak_ = 0;
     int statOutputPeak_ = 0;
