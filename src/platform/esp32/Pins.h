@@ -24,6 +24,14 @@ constexpr int kI2sDout = 7;
 
 constexpr int kVolumePot = 4;  // wiper; ADC1, ends to 3V3 and GND
 
+// GC9A01 round TFT, on its own SPI bus (SPI3) so redraws never touch the SD card.
+constexpr int kTftSck = 39;
+constexpr int kTftMosi = 40;
+constexpr int kTftDc = 41;
+constexpr int kTftCs = 42;
+constexpr int kTftRst = 21;
+constexpr int kTftBacklight = 14;
+
 constexpr int kOledAddress = 0x3C;
 constexpr int kRtcAddress = 0x68;
 
@@ -31,6 +39,11 @@ constexpr int kRtcAddress = 0x68;
 // moves two steps per click, try 2; if it turns the wrong way, flip kReverse.
 constexpr int kEncoderCountsPerStep = 4;
 constexpr bool kEncoderReverse = false;
+
+// If the round display shows speckles or shifted rows, lower this (wire length).
+constexpr uint32_t kTftSpiHz = 40000000;
+// If its colors look like a photo negative, flip this.
+constexpr bool kTftInvert = true;
 
 constexpr uint32_t kI2cHz = 400000;
 // 20 MHz failed mid-stream ("Card Failed! cmd: 0x0d") through the 5 V SD

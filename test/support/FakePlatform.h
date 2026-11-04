@@ -42,14 +42,13 @@ struct FakeInput : Input {
 };
 
 struct FakeDisplay : Display {
-    uint8_t buf[kDisplayBufferSize] = {};
+    DisplayState state;
     int shows = 0;
     bool begin() override { return true; }
-    void show(const uint8_t* b) override {
-        std::memcpy(buf, b, sizeof(buf));
+    void show(const DisplayState& s) override {
+        state = s;
         ++shows;
     }
-    bool pixel(int x, int y) const { return buf[x + (y / 8) * kDisplayWidth] & (1u << (y % 8)); }
 };
 
 struct FakeClock : Clock {

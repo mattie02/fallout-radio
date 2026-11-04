@@ -4,7 +4,8 @@
 //   Audio:   I2S (ESP-IDF 5 std driver) -> MAX98357A
 //   Input:   KY-040 encoder on the PCNT hardware counter + debounced button,
 //            volume pot on the ADC
-//   Display: SSD1306 128x32 over I2C (minimal driver, no library)
+//   Display: GC9A01 round TFT (Esp32Tft.h) and/or SSD1306 128x32 over I2C
+//            (minimal driver, no library)
 //   Clock:   DS3231 over I2C, read occasionally and extrapolated with millis()
 //   Storage: SD card over SPI
 
@@ -12,6 +13,7 @@
 #include <driver/pulse_cnt.h>
 
 #include "platform/Platform.h"
+#include "ui/Framebuffer.h"
 
 namespace radio {
 
@@ -58,13 +60,16 @@ private:
     uint32_t nextKnobMs_ = 0;
 };
 
-class Esp32Display : public Display {
+class Esp32Oled : public Display {
 public:
     bool begin() override;
-    void show(const uint8_t* buffer) override;
+    void show(const DisplayState& state) override;
 
 private:
     bool ok_ = false;
+    Framebuffer fb_;
+    uint8_t sent_[Framebuffer::kBufferSize] = {};
+    bool sentAny_ = false;
 };
 
 class Esp32Clock : public Clock {

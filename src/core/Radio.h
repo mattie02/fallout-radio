@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "core/Config.h"
-#include "core/Framebuffer.h"
 #include "core/Mixer.h"
 #include "core/Schedule.h"
 #include "core/StationPlayer.h"
@@ -97,7 +96,6 @@ private:
     int64_t lastSec_ = INT64_MIN;
     uint32_t secStartMillis_ = 0;
 
-    Framebuffer fb_;
     RadioConfig config_;
     std::vector<Station> stations_;
     Tuner tuner_;
@@ -120,6 +118,7 @@ private:
 
     bool dirty_ = true;
     int64_t shownMinute_ = -1;
+    float shownKnob_ = -1;
     uint32_t flashUntil_ = 0;
     bool flashing_ = false;
 };

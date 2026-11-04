@@ -15,15 +15,8 @@ constexpr uint32_t kPressFlashMs = 120;
 constexpr int64_t kLookupRetryMs = 5000;
 constexpr int64_t kRecoveryMinMs = 2000;
 constexpr int64_t kRecoveryMaxMs = 30000;
+constexpr float kKnobRedrawStep = 0.02f;
 constexpr int kForceRestart = -2;  // playerStation_ value that no target matches
-
-// Display layout on the 128x32 panel.
-constexpr int kNameY = 16;
-constexpr int kScaleLeft = 2;
-constexpr int kScaleRight = Framebuffer::kWidth - 3;
-constexpr int kScaleBottom = Framebuffer::kHeight - 1;
-constexpr int kNeedleTop = 25;
-constexpr int kMeterBars = 5;
 
 int tenths(float mhz) { return static_cast<int>(std::lround(mhz * 10.0f)); }
 
@@ -217,7 +210,16 @@ void Radio::update() {
     const InputState in = p_.input.read();
     if (in.knob >= 0) {
         const bool first = knob_.level() < 0;
-        if (knob_.update(in.knob)) mixer_.setKnobGain(knob_.gain(), first);
+        if (knob_.update(in.knob)) {
+            mixer_.setKnobGain(knob_.gain(), first);
+            // The pot jitters by a percent or so: don't redraw the screen for that.
+            const float level = knob_.level();
+            if (shownKnob_ < 0 || std::fabs(level - shownKnob_) >= kKnobRedrawStep ||
+                ((level == 0 || level == 1) && level != shownKnob_)) {
+                shownKnob_ = level;
+                dirty_ = true;
+            }
+        }
     }
     if (in.dialSteps != 0) {
         const int d = std::min(std::max(dial_ + in.dialSteps, dialMin_), dialMax_);
@@ -269,47 +271,20 @@ Radio::Status Radio::status() const {
 }
 
 void Radio::render() {
-    fb_.clear();
-    char text[24];
-
-    // Frequency, large, top left.
-    std::snprintf(text, sizeof(text), "%d.%d", dial_ / 10, dial_ % 10);
-    const int x = fb_.drawText(0, 0, text, 2);
-    fb_.drawText(x + 1, 7, "MHz");
-
-    // Clock, top right.
-    const int64_t secOfDay = ((shownMinute_ * 60) % 86400 + 86400) % 86400;
-    std::snprintf(text, sizeof(text), "%02d:%02d", static_cast<int>(secOfDay / 3600),
-                  static_cast<int>(secOfDay / 60 % 60));
-    fb_.drawText(Framebuffer::kWidth - Framebuffer::textWidth(text) + 1, 0, text);
-
-    // Signal meter under the clock: bars of rising height.
-    const int lit = static_cast<int>(std::lround(tuned_.signal * kMeterBars));
-    for (int i = 0; i < kMeterBars; ++i) {
-        const int bx = Framebuffer::kWidth - kMeterBars * 4 + i * 4;
-        const int h = i + 1;
-        if (i < lit) fb_.fillRect(bx, 14 - h, 3, h);
-        else fb_.hLine(bx, 13, 3);
-    }
-
-    // Station name.
+    DisplayState d;
+    d.dial = dial_;
+    d.dialMin = dialMin_;
+    d.dialMax = dialMax_;
     if (tuned_.station >= 0) {
-        std::snprintf(text, sizeof(text), "%.21s", stations_[tuned_.station].info.name.c_str());
-        fb_.drawText(0, kNameY, text);
+        std::snprintf(d.station, sizeof(d.station), "%s", stations_[tuned_.station].info.name.c_str());
     }
-
-    // Dial scale: baseline, a tick per MHz (taller every 5), the needle.
-    const int span = std::max(dialMax_ - dialMin_, 1);
-    auto toX = [&](int d) { return kScaleLeft + (d - dialMin_) * (kScaleRight - kScaleLeft) / span; };
-    fb_.hLine(kScaleLeft, kScaleBottom, kScaleRight - kScaleLeft + 1);
-    for (int d = (dialMin_ + 9) / 10 * 10; d <= dialMax_; d += 10) {
-        const int h = (d % 50 == 0) ? 4 : 2;
-        fb_.vLine(toX(d), kScaleBottom - h, h);
-    }
-    fb_.vLine(toX(dial_), kNeedleTop, kScaleBottom - kNeedleTop + 1);
-
-    if (flashing_) fb_.invert();
-    p_.display.show(fb_.data());
+    d.signal = tuned_.signal;
+    const int64_t secOfDay = ((shownMinute_ * 60) % 86400 + 86400) % 86400;
+    d.hour = static_cast<int>(secOfDay / 3600);
+    d.minute = static_cast<int>(secOfDay / 60 % 60);
+    d.volume = shownKnob_;
+    d.flash = flashing_;
+    p_.display.show(d);
 }
 
 }  // namespace radio

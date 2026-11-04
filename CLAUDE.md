@@ -34,8 +34,8 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 
 ## Hardware
 
-- **MCU:** ESP32-S3-WROOM-1 dev board (has a 5VIN pin and both COM/UART and native USB ports)
-- **Display:** 0.91" SSD1306 128×32, I2C, address 0x3C
+- **MCU:** ESP32-S3-WROOM-1 N16R8 dev board: 16 MB flash, 8 MB octal PSRAM (has a 5VIN pin and both COM/UART and native USB ports)
+- **Displays:** 1.28" GC9A01 round TFT (240×240, RGB, 4-wire SPI), the dial face; and a 0.91" SSD1306 128×32 OLED, I2C, address 0x3C. Each is optional: firmware drives whichever is connected.
 - **Input:** rotary encoder with push button (KY-040 style)
 - **Storage:** micro SD module (SPI, onboard regulator and level shifter, so it **must be powered from 5V**)
 - **Audio:** MAX98357A I2S amp, 5-pin board (G, V, BCL, LRC, DIN) → single 4–8 Ω speaker (mono)
@@ -60,35 +60,30 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 | I2S LRC (WS) | 6 | |
 | I2S DOUT → amp DIN | 7 | |
 | Volume pot wiper | 4 | ADC1 (works with Wi-Fi on); pot ends to 3V3 and GND; 0.1 µF from wiper to GND |
+| TFT SCL (SPI clock) | 39 | "SCL/SDA" on this board mean SPI, not I2C |
+| TFT SDA (SPI MOSI) | 40 | |
+| TFT DC | 41 | |
+| TFT CS | 42 | |
+| TFT RST | 21 | |
+| TFT BLK (backlight) | 14 | PWM brightness via LEDC, if the board has this pin |
 
-Power: a USB-C charger (5V, 2A or more) feeds a USB-C breakout (with 5.1 kΩ CC resistors). Its 5V goes through **SW1, the on/off switch built into the volume pot**, to the 5V rail: 5VIN, amp V and SD VCC. Ground is never switched. OLED, encoder, RTC and the volume pot run from **3V3**. All grounds are shared. The amp is a 5-pin MAX98357A board (G, V, BCL, LRC, DIN) with gain and channel mode fixed on the board. Bulk capacitors: C1 1000 µF across amp V/G, C2 100 µF across SD VCC/GND.
+Power: a USB-C charger (5V, 2A or more) feeds a USB-C breakout (with 5.1 kΩ CC resistors). Its 5V goes through **SW1, the on/off switch built into the volume pot**, to the 5V rail: 5VIN, amp V and SD VCC. Ground is never switched. OLED, TFT, encoder, RTC and the volume pot run from **3V3**. All grounds are shared. The amp is a 5-pin MAX98357A board (G, V, BCL, LRC, DIN) with gain and channel mode fixed on the board. Bulk capacitors: C1 1000 µF across amp V/G, C2 100 µF across SD VCC/GND.
 
 **Pins to avoid:** 0, 3, 45, 46 (strapping pins); 19 and 20 (native USB); 26–32 (flash); 33–37 (octal PSRAM on N8R8/N16R8 modules); 43 and 44 (UART0 / COM port); 38 and 48 (onboard RGB LED on DevKitC-1 boards).
 
 ### Controls
 
 - **Volume pot (10k linear, with switch):** clicks the radio on at the bottom of its travel. Firmware reads GPIO 4, averages and applies hysteresis, treats the ends as hard 0% and 100%, and maps position to volume with a logarithmic (perceptual) curve. There is no other volume control.
-- **Rotary encoder:** tuning only. There's no physical dial pointer; the OLED is the dial. Save the last dial position to NVS (ESP32 flash) a few seconds after tuning stops, and restore it on boot. The encoder button is free for another feature.
+- **Rotary encoder:** tuning only. There's no physical dial pointer; the screen is the dial. Save the last dial position to NVS (ESP32 flash) a few seconds after tuning stops, and restore it on boot. The encoder button is free for another feature.
 - **Power cycling is normal use:** the pot switch cuts all power. Never write to the SD card. Boot fast, fade audio in, and cover the boot time with a warm-up hum. Clock-based stations resume "live" automatically.
 
-### Future expansion: round TFT display (not built yet)
-
-A 1.28" GC9A01 round TFT (240×240, RGB, 4-wire SPI) is planned, likely as a round dial face. **Don't use these pins for anything else:**
-
-| TFT pin | GPIO | Notes |
-|---|---|---|
-| SCL (SPI clock) | 39 | "SCL/SDA" on this board mean SPI, not I2C |
-| SDA (SPI MOSI) | 40 | |
-| DC | 41 | |
-| CS | 42 | |
-| RST | 21 | |
-| BLK (backlight) | 14 | PWM brightness via LEDC, if the board has this pin |
-| VCC / GND | 3V3 / GND | |
+### Round TFT display
 
 - It runs on its **own SPI bus (SPI3)**, separate from the SD card's bus, so screen redraws never block SD reads and cause audio dropouts.
-- Library: LovyanGFX (good ESP32-S3 support with Arduino core 3.x). Draw into a sprite (framebuffer in PSRAM) and push only what changed.
-- **Design for it now:** the `Display` interface and UI code must not assume 128×32 monochrome. Keep the "what to show" logic (station, frequency, signal, volume) separate from the "how to draw it" code for each screen, so a round 240×240 color dial can be added without touching `core/`. The desktop simulator should be able to show either screen, so the round dial UI can be designed before the hardware is wired.
-- Remaining spare GPIOs after this: 1, 2, 10 (ADC-capable) and 47. Avoid 38 and 48 (the onboard RGB LED on DevKitC-1 boards).
+- Library: LovyanGFX. `ui/RoundDial` draws into sprites in PSRAM (static face + frame) and is shared with the simulator, so the simulator shows the panel's exact pixels.
+- Drawing and pushing take ~20 ms, so a FreeRTOS task on core 0 does it (`platform/esp32/Esp32Tft`); the audio loop on core 1 only hands over the latest `DisplayState`. Only rows that changed are sent.
+- Panel settings that depend on the wiring or the module are in `Pins.h`: SPI speed (lower it if the image speckles) and color inversion.
+- Remaining spare GPIOs: 1, 2, 10 (ADC-capable) and 47. Avoid 38 and 48 (the onboard RGB LED on DevKitC-1 boards).
 
 ---
 
@@ -104,10 +99,13 @@ src/
     Mixer          # decoded station audio + generated static, mixed by signal strength
     Effects        # vintage EQ / band-pass, crackle, volume
     Radio          # ties it together; the main state machine
+  ui/              # how each screen looks: DisplayState -> pixels. Shared by both targets, no hardware access
+    MonoDial       # the 128x32 OLED, on Framebuffer
+    RoundDial      # the 240x240 round TFT, with LovyanGFX sprites
   platform/
     Platform.h     # interfaces: AudioOut, Input, Display, Clock, Storage
-    esp32/         # I2S, encoder (ESP32Encoder / PCNT), volume pot (ADC), SSD1306, DS3231 (RTClib), SD, NVS
-    desktop/       # audio to speakers, keyboard/mouse dial, scaled 128x32 window, controllable clock, local folder
+    esp32/         # I2S, encoder (ESP32Encoder / PCNT), volume pot (ADC), SSD1306, GC9A01, DS3231 (RTClib), SD, NVS
+    desktop/       # audio to speakers, keyboard/mouse dial, a window showing either screen, controllable clock, local folder
 tools/
   prep/            # Python content-prep and schedule generator (runs on the Mac)
 content/           # the source "SD card" folder (desktop reads it directly; gets copied to the card)
@@ -115,7 +113,7 @@ content/           # the source "SD card" folder (desktop reads it directly; get
 
 ### PlatformIO environments
 
-- `esp32s3`: `board = esp32-s3-devkitc-1`, Arduino framework. Enable PSRAM if the module has it.
+- `esp32s3`: `board = esp32-s3-devkitc-1`, Arduino framework, octal PSRAM enabled.
 - `desktop`: `platform = native`. Uses SDL2 for the window, input and audio (`brew install sdl2`). On Apple Silicon, add `-I/opt/homebrew/include -L/opt/homebrew/lib`.
 
 MP3 decoding should use the same decoder on both targets (for example, the decoder used by arduino-audio-tools, or a header-only decoder such as minimp3), so audio behaves identically.
@@ -125,7 +123,7 @@ MP3 decoding should use the same decoder on both targets (for example, the decod
 - Mouse wheel / ← → : turn the dial. Click / Space : encoder button.
 - ↑ ↓ : volume pot. P : power switch (simulates a full power cycle and boot).
 - **Time controls** (essential for testing the schedule): pause the clock, fast-forward, and jump to a specific date and time (e.g. Dec 24 23:58).
-- Display: the 128×32 framebuffer, drawn scaled up (×4 or more) in the same white-on-black look. Later, optionally the round 240×240 TFT dial (see Future expansion).
+- Display: the round TFT dial at ×2 or the OLED at ×4. D switches between them; `--screen round|oled` picks one at startup.
 
 ---
 
@@ -177,6 +175,7 @@ Static is **generated in code** (filtered noise), not stored as files.
 ## Conventions
 
 - `core/` never includes Arduino, ESP-IDF or SDL headers. If something needs hardware, add an interface to `Platform.h`. Exception: ArduinoJson, which is portable C++ and used on both targets for the JSON config files.
+- `core/` decides what to show (`DisplayState`), `ui/` decides how it looks. `core/` doesn't include `ui/`.
 - Never block the audio path. `Radio::update()` is called often; the display only redraws on change.
 - Keep the desktop and ESP32 builds both compiling at all times.
 - Prefer small, testable pieces. Schedule lookup and Tuner math should have unit tests (`pio test -e desktop`).
@@ -192,7 +191,7 @@ Static is **generated in code** (filtered noise), not stored as files.
 5. **ESP32 platform layer:** port to hardware (the pin and wiring test sketches already work).
 6. **Polish:** boot sound, display design, the hidden station, special broadcasts.
 7. **Enclosure integration:** 3D-printed case (must fit a Bambu printer), USB-C power input, volume/power knob.
-8. **Future:** round GC9A01 TFT dial face (pins already reserved).
+8. **Round display:** GC9A01 TFT dial face (done, alongside the OLED).
 
 ---
 

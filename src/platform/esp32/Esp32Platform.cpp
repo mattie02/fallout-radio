@@ -10,11 +10,13 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstring>
 #include <initializer_list>
 #include <string>
 
 #include "core/CivilTime.h"
 #include "platform/esp32/Pins.h"
+#include "ui/MonoDial.h"
 
 namespace radio {
 
@@ -204,7 +206,7 @@ bool oledCommands(std::initializer_list<uint8_t> bytes) {
 
 }  // namespace
 
-bool Esp32Display::begin() {
+bool Esp32Oled::begin() {
     ensureI2c();
     ok_ = oledCommands({
         0xAE,        // display off
@@ -228,11 +230,18 @@ bool Esp32Display::begin() {
     return ok_;
 }
 
-void Esp32Display::show(const uint8_t* buffer) {
+void Esp32Oled::show(const DisplayState& state) {
     if (!ok_) return;
+    drawMonoDial(state, fb_);
+    // I2C is slow and runs on the audio loop: skip changes this screen doesn't
+    // show, such as the volume.
+    if (sentAny_ && std::memcmp(sent_, fb_.data(), sizeof(sent_)) == 0) return;
+    std::memcpy(sent_, fb_.data(), sizeof(sent_));
+    sentAny_ = true;
+    const uint8_t* buffer = fb_.data();
     oledCommands({0x21, 0, 127, 0x22, 0, 3});  // whole screen
     constexpr size_t kChunk = 64;  // fits the Wire buffer
-    for (size_t i = 0; i < kDisplayBufferSize; i += kChunk) {
+    for (size_t i = 0; i < Framebuffer::kBufferSize; i += kChunk) {
         Wire.beginTransmission(pins::kOledAddress);
         Wire.write(0x40);  // control byte: data follows
         Wire.write(buffer + i, kChunk);

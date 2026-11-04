@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <ctime>
 
+#include "ui/MonoDial.h"
+
 namespace radio {
 
 // --- Audio ------------------------------------------------------------------
@@ -93,26 +95,26 @@ DesktopDisplay::~DesktopDisplay() {
     if (window_) SDL_DestroyWindow(window_);
 }
 
+namespace {
+
+constexpr int kOledScale = 4;
+constexpr int kRoundScale = 2;
+constexpr int kBezel = 12;
+constexpr uint32_t kBezelArgb = 0xFF18181A;
+
+}  // namespace
+
 bool DesktopDisplay::begin() {
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");  // nearest-neighbour
-    const int w = kDisplayWidth * kScale + 2 * kBezel;
-    const int h = kDisplayHeight * kScale + 2 * kBezel;
     window_ = SDL_CreateWindow("Vintage Radio", SDL_WINDOWPOS_CENTERED,
-                               SDL_WINDOWPOS_CENTERED, w, h, 0);
+                               SDL_WINDOWPOS_CENTERED, 64, 64, 0);
     if (!window_) {
         std::fprintf(stderr, "display: %s\n", SDL_GetError());
         return false;
     }
     renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer_) renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE);
-    if (!renderer_) {
-        std::fprintf(stderr, "display: %s\n", SDL_GetError());
-        return false;
-    }
-    SDL_RenderSetLogicalSize(renderer_, w, h);  // stay sharp on Retina
-    texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888,
-                                 SDL_TEXTUREACCESS_STREAMING, kDisplayWidth, kDisplayHeight);
-    if (!texture_) {
+    if (!renderer_ || !round_.begin() || !applyScreen()) {
         std::fprintf(stderr, "display: %s\n", SDL_GetError());
         return false;
     }
@@ -120,32 +122,81 @@ bool DesktopDisplay::begin() {
     return true;
 }
 
-void DesktopDisplay::show(const uint8_t* buffer) {
-    SDL_memcpy(last_, buffer, sizeof(last_));
+bool DesktopDisplay::applyScreen() {
+    const bool isRound = screen_ == Screen::Round;
+    const int texW = isRound ? RoundDial::kSize : Framebuffer::kWidth;
+    const int texH = isRound ? RoundDial::kSize : Framebuffer::kHeight;
+    const int scale = isRound ? kRoundScale : kOledScale;
+    const int w = texW * scale + 2 * kBezel;
+    const int h = texH * scale + 2 * kBezel;
+    SDL_SetWindowSize(window_, w, h);
+    SDL_RenderSetLogicalSize(renderer_, w, h);  // stay sharp on Retina
+    if (texture_) SDL_DestroyTexture(texture_);
+    texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888,
+                                 SDL_TEXTUREACCESS_STREAMING, texW, texH);
+    return texture_ != nullptr;
+}
+
+void DesktopDisplay::toggleScreen() {
+    screen_ = screen_ == Screen::Round ? Screen::Oled : Screen::Round;
+    if (window_ && renderer_) {
+        applyScreen();
+        refresh();
+    }
+}
+
+void DesktopDisplay::show(const DisplayState& state) {
+    state_ = state;
     refresh();
 }
 
-void DesktopDisplay::refresh() {
-    if (!renderer_) return;
+void DesktopDisplay::drawRound(uint8_t* pixels, int pitch) {
+    const uint16_t* src = round_.draw(state_);
+    if (!src) return;
+    const int size = RoundDial::kSize;
+    const float radius = size / 2.0f;
+    for (int y = 0; y < size; ++y) {
+        auto* row = reinterpret_cast<uint32_t*>(pixels + y * pitch);
+        for (int x = 0; x < size; ++x) {
+            const float dx = x + 0.5f - radius, dy = y + 0.5f - radius;
+            if (dx * dx + dy * dy > radius * radius) {
+                row[x] = kBezelArgb;  // beyond the edge of the round panel
+                continue;
+            }
+            const uint16_t be = src[y * size + x];
+            const uint16_t c = static_cast<uint16_t>(be << 8 | be >> 8);
+            const uint32_t r = (c >> 11) & 0x1F, g = (c >> 5) & 0x3F, b = c & 0x1F;
+            row[x] = 0xFF000000u | ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+        }
+    }
+}
+
+void DesktopDisplay::drawOled(uint8_t* pixels, int pitch) {
     constexpr uint32_t kOn = 0xFFE8F0FF;   // SSD1306 white, slightly cool
     constexpr uint32_t kOff = 0xFF050608;  // unlit panel
+    drawMonoDial(state_, oled_);
+    for (int y = 0; y < Framebuffer::kHeight; ++y) {
+        auto* row = reinterpret_cast<uint32_t*>(pixels + y * pitch);
+        for (int x = 0; x < Framebuffer::kWidth; ++x) row[x] = oled_.getPixel(x, y) ? kOn : kOff;
+    }
+}
 
+void DesktopDisplay::refresh() {
+    if (!renderer_ || !texture_) return;
     void* pixels = nullptr;
     int pitch = 0;
     if (SDL_LockTexture(texture_, nullptr, &pixels, &pitch) == 0) {
-        for (int y = 0; y < kDisplayHeight; ++y) {
-            auto* row = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(pixels) + y * pitch);
-            for (int x = 0; x < kDisplayWidth; ++x) {
-                const bool on = last_[x + (y / 8) * kDisplayWidth] & (1u << (y % 8));
-                row[x] = on ? kOn : kOff;
-            }
-        }
+        if (screen_ == Screen::Round) drawRound(static_cast<uint8_t*>(pixels), pitch);
+        else drawOled(static_cast<uint8_t*>(pixels), pitch);
         SDL_UnlockTexture(texture_);
     }
 
     SDL_SetRenderDrawColor(renderer_, 24, 24, 26, 255);  // bezel
     SDL_RenderClear(renderer_);
-    const SDL_Rect dst{kBezel, kBezel, kDisplayWidth * kScale, kDisplayHeight * kScale};
+    const int scale = screen_ == Screen::Round ? kRoundScale : kOledScale;
+    int w = 0, h = 0;
+    SDL_QueryTexture(texture_, nullptr, nullptr, &w, &h);
+    const SDL_Rect dst{kBezel, kBezel, w * scale, h * scale};
     SDL_RenderCopy(renderer_, texture_, nullptr, &dst);
     SDL_RenderPresent(renderer_);
 }

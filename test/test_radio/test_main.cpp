@@ -20,24 +20,6 @@ struct Rig : FakePlatform {
     Radio radio{platform};
 };
 
-// Set RADIO_DUMP=1 to print the display as ASCII art.
-void dump(const FakeDisplay& d) {
-    if (!std::getenv("RADIO_DUMP")) return;
-    for (int y = 0; y < kDisplayHeight; ++y) {
-        char line[kDisplayWidth + 1];
-        for (int x = 0; x < kDisplayWidth; ++x) line[x] = d.pixel(x, y) ? '#' : '.';
-        line[kDisplayWidth] = 0;
-        std::printf("%s\n", line);
-    }
-}
-
-int needleX(const FakeDisplay& d) {
-    // The needle is the only thing lit on row 25 (ticks start lower).
-    for (int x = 0; x < kDisplayWidth; ++x)
-        if (d.pixel(x, 25)) return x;
-    return -1;
-}
-
 void addStation(MemoryStorage& s, const char* dir, const char* json, const std::string& schedule) {
     s.files[std::string("/stations/") + dir + "/station.json"] = json;
     if (!schedule.empty()) s.files[std::string("/stations/") + dir + "/schedule.txt"] = schedule;
@@ -65,7 +47,8 @@ void test_dial_moves_and_redraws() {
     TEST_ASSERT_TRUE(r.radio.begin());
     r.radio.update();
     TEST_ASSERT_EQUAL(1, r.display.shows);
-    const int before = needleX(r.display);
+    TEST_ASSERT_EQUAL(23, r.display.state.hour);
+    TEST_ASSERT_EQUAL(58, r.display.state.minute);
 
     r.radio.update();  // nothing changed: no redraw
     TEST_ASSERT_EQUAL(1, r.display.shows);
@@ -74,7 +57,7 @@ void test_dial_moves_and_redraws() {
     r.radio.update();
     TEST_ASSERT_EQUAL(2, r.display.shows);
     TEST_ASSERT_EQUAL(1036, r.radio.dial());
-    TEST_ASSERT_GREATER_THAN(before, needleX(r.display));
+    TEST_ASSERT_EQUAL(1036, r.display.state.dial);
 }
 
 void test_dial_clamps_to_range() {
@@ -83,11 +66,11 @@ void test_dial_clamps_to_range() {
     r.input.next.dialSteps = -10000;
     r.radio.update();
     TEST_ASSERT_EQUAL(r.radio.dialMin(), r.radio.dial());
-    TEST_ASSERT_EQUAL(2, needleX(r.display));
+    TEST_ASSERT_EQUAL(r.radio.dialMin(), r.display.state.dial);
     r.input.next.dialSteps = 10000;
     r.radio.update();
     TEST_ASSERT_EQUAL(r.radio.dialMax(), r.radio.dial());
-    TEST_ASSERT_EQUAL(kDisplayWidth - 3, needleX(r.display));
+    TEST_ASSERT_EQUAL(r.radio.dialMax(), r.display.state.dial);
 }
 
 void test_dial_range_from_config() {
@@ -102,13 +85,34 @@ void test_button_flashes_display() {
     Rig r;
     r.radio.begin();
     r.radio.update();
-    const bool corner = r.display.pixel(127, 31);
+    TEST_ASSERT_FALSE(r.display.state.flash);
     r.input.next.pressed = true;
     r.radio.update();
-    TEST_ASSERT_NOT_EQUAL(corner, r.display.pixel(127, 31));
+    TEST_ASSERT_TRUE(r.display.state.flash);
     r.clock.ms = 1000;
     r.radio.update();
-    TEST_ASSERT_EQUAL(corner, r.display.pixel(127, 31));
+    TEST_ASSERT_FALSE(r.display.state.flash);
+}
+
+void test_display_shows_station_and_volume() {
+    Rig r;
+    addStation(r.storage, "01_a", R"({"name": "Country", "frequency": 91.5})", "");
+    r.radio.begin();
+    r.radio.tuneTo(91.5f);
+    r.radio.update();
+    TEST_ASSERT_EQUAL_STRING("Country", r.display.state.station);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, r.display.state.signal);
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, r.display.state.volume);
+
+    const int shows = r.display.shows;
+    r.input.next.knob = 0.5f;  // turning the knob redraws
+    r.radio.update();
+    TEST_ASSERT_EQUAL(shows + 1, r.display.shows);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, r.display.state.volume);
+
+    r.radio.tuneTo(100.0f);  // out of range
+    r.radio.update();
+    TEST_ASSERT_EQUAL_STRING("", r.display.state.station);
 }
 
 void test_loads_valid_stations_sorted_by_frequency() {
@@ -135,7 +139,6 @@ void test_tuning_and_now_playing() {
     TEST_ASSERT_TRUE(s.playing);
     TEST_ASSERT_EQUAL_STRING("dj/001_b.mp3", s.entry.path);
     TEST_ASSERT_EQUAL_UINT32(15000, s.offsetMs);
-    dump(r.display);
 
     // Time passes into the next entry (the 90 s schedule wraps).
     r.clock.t = kMondaySec + 95;
@@ -174,6 +177,7 @@ int main() {
     RUN_TEST(test_dial_clamps_to_range);
     RUN_TEST(test_dial_range_from_config);
     RUN_TEST(test_button_flashes_display);
+    RUN_TEST(test_display_shows_station_and_volume);
     RUN_TEST(test_loads_valid_stations_sorted_by_frequency);
     RUN_TEST(test_tuning_and_now_playing);
     RUN_TEST(test_station_without_schedule);

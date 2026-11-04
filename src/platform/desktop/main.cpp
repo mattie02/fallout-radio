@@ -1,10 +1,11 @@
 // Desktop simulator entry point.
 //
-//   program [--content DIR] [--time "YYYY-MM-DD HH:MM[:SS]"]
+//   program [--content DIR] [--time "YYYY-MM-DD HH:MM[:SS]"] [--screen round|oled]
 //
 // Dial:   mouse wheel, ← →  (Shift for 1 MHz steps)
 // Button: click, Space
 // Clock:  P pause/resume, ] faster, [ slower, R back to real time
+// D switches between the round TFT and the OLED.
 // C reloads system/config.json (tune the sound by ear). Esc quits.
 
 // Excluded from `pio test` builds, which bring their own main().
@@ -61,7 +62,7 @@ std::string statusLine(const radio::Radio& radio, radio::DesktopClock& clock) {
 }
 
 void usage() {
-    std::fprintf(stderr, "usage: program [--content DIR] [--time \"YYYY-MM-DD HH:MM[:SS]\"]\n");
+    std::fprintf(stderr, "usage: program [--content DIR] [--time \"YYYY-MM-DD HH:MM[:SS]\"] [--screen round|oled]\n");
 }
 
 }  // namespace
@@ -69,11 +70,20 @@ void usage() {
 int main(int argc, char** argv) {
     std::string contentDir = "content";
     const char* startTime = nullptr;
+    auto screen = radio::DesktopDisplay::Screen::Round;
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--content") && i + 1 < argc) {
             contentDir = argv[++i];
         } else if (!std::strcmp(argv[i], "--time") && i + 1 < argc) {
             startTime = argv[++i];
+        } else if (!std::strcmp(argv[i], "--screen") && i + 1 < argc) {
+            ++i;
+            if (!std::strcmp(argv[i], "oled")) {
+                screen = radio::DesktopDisplay::Screen::Oled;
+            } else if (std::strcmp(argv[i], "round") != 0) {
+                usage();
+                return 2;
+            }
         } else {
             usage();
             return 2;
@@ -89,7 +99,7 @@ int main(int argc, char** argv) {
     {
         radio::DesktopAudio audio;
         radio::DesktopInput input;
-        radio::DesktopDisplay display;
+        radio::DesktopDisplay display(screen);
         radio::DesktopClock clock;
         radio::DesktopStorage storage(contentDir);
         radio::Platform platform{audio, input, display, clock, storage};
@@ -120,6 +130,7 @@ int main(int argc, char** argv) {
                 } else if (e.type == SDL_KEYDOWN) {
                     switch (e.key.keysym.sym) {
                         case SDLK_ESCAPE: running = false; break;
+                        case SDLK_d: display.toggleScreen(); break;
                         case SDLK_p: clock.setPaused(!clock.paused()); break;
                         case SDLK_RIGHTBRACKET:
                             if (speedIndex + 1 < kSpeedCount) clock.setSpeed(kSpeeds[++speedIndex]);
