@@ -115,6 +115,77 @@ void test_display_shows_station_and_volume() {
     TEST_ASSERT_EQUAL_STRING("", r.display.state.station);
 }
 
+void test_dial_restored_at_boot() {
+    Rig r;
+    r.settings.hasDial = true;
+    r.settings.dial = 1031;
+    r.radio.begin();
+    TEST_ASSERT_EQUAL(1031, r.radio.dial());
+    r.clock.ms = 60000;
+    r.radio.update();
+    TEST_ASSERT_EQUAL(0, r.settings.saves);  // restoring isn't a change to save
+}
+
+void test_saved_dial_outside_the_range_is_clamped() {
+    Rig r;
+    r.settings.hasDial = true;
+    r.settings.dial = 50000;
+    r.radio.begin();
+    TEST_ASSERT_EQUAL(r.radio.dialMax(), r.radio.dial());
+}
+
+void test_dial_saved_once_after_it_settles() {
+    Rig r;
+    r.radio.begin();
+    const int start = r.radio.dial();
+    r.radio.update();
+    TEST_ASSERT_EQUAL(0, r.settings.saves);
+
+    // Still turning: each step restarts the wait, however long it goes on.
+    for (int i = 1; i <= 10; ++i) {
+        r.clock.ms = i * 1000;
+        r.input.next.dialSteps = 1;
+        r.radio.update();
+        TEST_ASSERT_EQUAL(0, r.settings.saves);
+    }
+    r.clock.ms = 12999;
+    r.radio.update();
+    TEST_ASSERT_EQUAL(0, r.settings.saves);
+
+    r.clock.ms = 13000;
+    r.radio.update();
+    TEST_ASSERT_EQUAL(1, r.settings.saves);
+    TEST_ASSERT_EQUAL(start + 10, r.settings.dial);
+
+    r.clock.ms = 60000;
+    r.radio.update();
+    TEST_ASSERT_EQUAL(1, r.settings.saves);  // no more writes while it stays put
+}
+
+void test_dial_not_saved_if_it_comes_back() {
+    Rig r;
+    r.radio.begin();
+    r.input.next.dialSteps = 5;
+    r.radio.update();
+    r.clock.ms = 1000;
+    r.input.next.dialSteps = -5;
+    r.radio.update();
+    r.clock.ms = 60000;
+    r.radio.update();
+    TEST_ASSERT_EQUAL(0, r.settings.saves);  // flash wear for nothing
+}
+
+void test_dial_save_survives_millis_wrapping() {
+    Rig r;
+    r.clock.ms = 0xFFFFF000u;
+    r.radio.begin();
+    r.input.next.dialSteps = 1;
+    r.radio.update();
+    r.clock.ms = 0xFFFFF000u + 3000;  // wrapped past zero
+    r.radio.update();
+    TEST_ASSERT_EQUAL(1, r.settings.saves);
+}
+
 void test_display_gets_audio_even_with_volume_down() {
     Rig r;
     r.radio.begin();
@@ -190,6 +261,11 @@ int main() {
     RUN_TEST(test_button_flashes_display);
     RUN_TEST(test_display_shows_station_and_volume);
     RUN_TEST(test_display_gets_audio_even_with_volume_down);
+    RUN_TEST(test_dial_restored_at_boot);
+    RUN_TEST(test_saved_dial_outside_the_range_is_clamped);
+    RUN_TEST(test_dial_saved_once_after_it_settles);
+    RUN_TEST(test_dial_not_saved_if_it_comes_back);
+    RUN_TEST(test_dial_save_survives_millis_wrapping);
     RUN_TEST(test_loads_valid_stations_sorted_by_frequency);
     RUN_TEST(test_tuning_and_now_playing);
     RUN_TEST(test_station_without_schedule);

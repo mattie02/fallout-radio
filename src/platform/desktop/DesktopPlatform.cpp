@@ -347,4 +347,21 @@ bool DesktopStorage::list(const char* dir, std::vector<std::string>& names) {
     return true;
 }
 
+// --- Settings ---------------------------------------------------------------
+
+bool DesktopSettings::loadDial(int& dial) {
+    std::FILE* f = std::fopen(path_.c_str(), "r");
+    if (!f) return false;
+    const bool ok = std::fscanf(f, "%d", &dial) == 1;
+    std::fclose(f);
+    return ok;
+}
+
+void DesktopSettings::saveDial(int dial) {
+    std::FILE* f = std::fopen(path_.c_str(), "w");
+    if (!f) return;  // e.g. run from outside the project: just doesn't remember
+    std::fprintf(f, "%d\n", dial);
+    std::fclose(f);
+}
+
 }  // namespace radio

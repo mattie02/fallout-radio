@@ -102,7 +102,8 @@ int main(int argc, char** argv) {
         radio::DesktopDisplay display(screen);
         radio::DesktopClock clock;
         radio::DesktopStorage storage(contentDir);
-        radio::Platform platform{audio, input, display, clock, storage};
+        radio::DesktopSettings settings(".pio/simulator_dial.txt");
+        radio::Platform platform{audio, input, display, clock, storage, settings};
 
         clock.resetToRealTime();
         if (startTime) {
