@@ -8,6 +8,7 @@
 //            over I2C (minimal driver, no library)
 //   Clock:   DS3231 over I2C, read occasionally and extrapolated with millis()
 //   Storage: SD card over SPI
+//   Settings: NVS (the ESP32's own flash), through the Preferences library
 
 #include <driver/i2s_std.h>
 #include <driver/pulse_cnt.h>
@@ -132,6 +133,23 @@ public:
 
 private:
     bool ok_ = false;
+};
+
+class Esp32Settings : public Settings {
+public:
+    bool loadDial(int& dial) override;
+    void saveDial(int dial) override;
+
+    // Diagnostics: how long the last save stalled the loop, and how many ran.
+    uint32_t lastSaveUs() const { return lastSaveUs_; }
+    uint32_t saves() const { return saves_; }
+
+private:
+    bool open();
+
+    bool opened_ = false;
+    uint32_t lastSaveUs_ = 0;
+    uint32_t saves_ = 0;
 };
 
 }  // namespace radio

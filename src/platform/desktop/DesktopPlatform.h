@@ -118,4 +118,15 @@ private:
     std::string root_;
 };
 
+// A small text file. Not in the content folder, which stands in for the SD card.
+class DesktopSettings : public Settings {
+public:
+    explicit DesktopSettings(std::string path) : path_(std::move(path)) {}
+    bool loadDial(int& dial) override;
+    void saveDial(int dial) override;
+
+private:
+    std::string path_;
+};
+
 }  // namespace radio

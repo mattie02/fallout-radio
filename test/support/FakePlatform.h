@@ -130,13 +130,29 @@ struct MemoryStorage : Storage {
     }
 };
 
+struct FakeSettings : Settings {
+    bool hasDial = false;
+    int dial = 0;
+    int saves = 0;
+    bool loadDial(int& d) override {
+        if (hasDial) d = dial;
+        return hasDial;
+    }
+    void saveDial(int d) override {
+        hasDial = true;
+        dial = d;
+        ++saves;
+    }
+};
+
 struct FakePlatform {
     FakeAudio audio;
     FakeInput input;
     FakeDisplay display;
     FakeClock clock;
     MemoryStorage storage;
-    Platform platform{audio, input, display, clock, storage};
+    FakeSettings settings;
+    Platform platform{audio, input, display, clock, storage, settings};
 };
 
 // Reads a file next to the calling test source (pass __FILE__).

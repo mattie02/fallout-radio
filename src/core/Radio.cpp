@@ -16,6 +16,7 @@ constexpr int64_t kLookupRetryMs = 5000;
 constexpr int64_t kRecoveryMinMs = 2000;
 constexpr int64_t kRecoveryMaxMs = 30000;
 constexpr float kKnobRedrawStep = 0.02f;
+constexpr uint32_t kDialSaveDelayMs = 3000;
 constexpr int kForceRestart = -2;  // playerStation_ value that no target matches
 
 int tenths(float mhz) { return static_cast<int>(std::lround(mhz * 10.0f)); }
@@ -37,7 +38,11 @@ bool Radio::begin() {
     }
     dialMin_ = tenths(config_.dialMinMhz);
     dialMax_ = std::max(dialMin_, tenths(config_.dialMaxMhz));
+    int restored = dial_;
+    if (p_.settings.loadDial(restored)) dial_ = restored;
     dial_ = std::min(std::max(dial_, dialMin_), dialMax_);
+    savedDial_ = lastSeenDial_ = dial_;
+    dialMovedMs_ = p_.clock.millis();
     tuner_.setSignal(config_.lockMhz, config_.fadeMhz);
     mixer_.configure(config_.audio);
     retune();
@@ -246,6 +251,8 @@ void Radio::update() {
     renderAudio();
     recoverStorage(nowMs);
 
+    saveDialWhenSettled(ms);
+
     if (lastSec_ / 60 != shownMinute_) {
         shownMinute_ = lastSec_ / 60;
         dirty_ = true;
@@ -255,6 +262,16 @@ void Radio::update() {
         render();
         dirty_ = false;
     }
+}
+
+void Radio::saveDialWhenSettled(uint32_t ms) {
+    if (dial_ != lastSeenDial_) {
+        lastSeenDial_ = dial_;
+        dialMovedMs_ = ms;
+    }
+    if (dial_ == savedDial_ || ms - dialMovedMs_ < kDialSaveDelayMs) return;
+    p_.settings.saveDial(dial_);
+    savedDial_ = dial_;
 }
 
 Radio::Status Radio::status() const {

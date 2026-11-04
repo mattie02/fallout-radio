@@ -74,7 +74,7 @@ Power: a USB-C charger (5V, 2A or more) feeds a USB-C breakout (with 5.1 kΩ CC 
 ### Controls
 
 - **Volume pot (10k linear, with switch):** clicks the radio on at the bottom of its travel. Firmware reads GPIO 4, averages and applies hysteresis, treats the ends as hard 0% and 100%, and maps position to volume with a logarithmic (perceptual) curve. There is no other volume control.
-- **Rotary encoder:** tuning only. There's no physical dial pointer; the screen is the dial. Save the last dial position to NVS (ESP32 flash) a few seconds after tuning stops, and restore it on boot. The encoder button is free for another feature.
+- **Rotary encoder:** tuning only. There's no physical dial pointer; the screen is the dial. The last dial position is saved to NVS (ESP32 flash) 3 seconds after tuning stops and restored on boot; the simulator keeps it in `.pio/simulator_dial.txt`. The encoder button is free for another feature.
 - **Power cycling is normal use:** the pot switch cuts all power. Never write to the SD card. Boot fast, fade audio in, and cover the boot time with a warm-up hum. Clock-based stations resume "live" automatically.
 
 ### Round TFT display

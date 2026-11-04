@@ -102,12 +102,24 @@ public:
     virtual bool recover() { return false; }
 };
 
+// Small things to remember across power cycles. Kept off the content storage:
+// the SD card is never written to.
+class Settings {
+public:
+    virtual ~Settings() = default;
+    // Last saved dial position, tenths of MHz. False if nothing was saved yet.
+    virtual bool loadDial(int& dial) = 0;
+    // May stall everything for some milliseconds (a flash write), so call rarely.
+    virtual void saveDial(int dial) = 0;
+};
+
 struct Platform {
     AudioOut& audio;
     Input& input;
     Display& display;
     Clock& clock;
     Storage& storage;
+    Settings& settings;
 };
 
 }  // namespace radio

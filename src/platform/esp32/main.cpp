@@ -43,7 +43,8 @@ public:
 Screens display;
 radio::Esp32Clock clock_;
 radio::Esp32Storage storage;
-radio::Platform platform{audio, input, display, clock_, storage};
+radio::Esp32Settings settings;
+radio::Platform platform{audio, input, display, clock_, storage, settings};
 radio::Radio radioApp(platform);
 
 void printTime() {
@@ -101,6 +102,7 @@ void printDisplay() {
     const radio::Esp32Oled::Stats o = oled.stats();
     if (o.present) Serial.printf("waveform: %u frames, last push %u us\n", o.frames, o.pushUs);
     else Serial.println("waveform: no OLED");
+    Serial.printf("dial saves: %u, last took %u us\n", settings.saves(), settings.lastSaveUs());
     Serial.printf("psram: %u bytes, %u free\n", static_cast<unsigned>(ESP.getPsramSize()),
                   static_cast<unsigned>(ESP.getFreePsram()));
 }

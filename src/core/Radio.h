@@ -82,6 +82,7 @@ private:
     void recoverStorage(int64_t nowMs);
     static std::string schedulePath(const Station& s);
     void render();
+    void saveDialWhenSettled(uint32_t ms);
 
     Platform& p_;
     StationPlayer player_;
@@ -106,6 +107,11 @@ private:
     int dial_ = 986;
     int dialMin_ = 880;
     int dialMax_ = 1080;
+
+    // The dial is saved once it has stayed put for a while, not on every step.
+    int savedDial_ = 0;
+    int lastSeenDial_ = 0;
+    uint32_t dialMovedMs_ = 0;
 
     // When a schedule lookup last failed (bad file): retry after a pause
     // rather than hammering storage every update.

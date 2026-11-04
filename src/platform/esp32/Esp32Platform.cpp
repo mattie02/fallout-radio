@@ -1,6 +1,7 @@
 #include "platform/esp32/Esp32Platform.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <SD.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -487,6 +488,34 @@ bool Esp32Storage::list(const char* dir, std::vector<std::string>& names) {
         if (name && name[0] != '.') names.emplace_back(name);
     }
     return true;
+}
+
+// --- Settings: NVS -------------------------------------------------------------
+
+namespace {
+
+Preferences prefs;
+constexpr char kDialKey[] = "dial";
+
+}  // namespace
+
+bool Esp32Settings::open() {
+    if (!opened_) opened_ = prefs.begin("radio", false);
+    return opened_;
+}
+
+bool Esp32Settings::loadDial(int& dial) {
+    if (!open() || !prefs.isKey(kDialKey)) return false;
+    dial = prefs.getInt(kDialKey, dial);
+    return true;
+}
+
+void Esp32Settings::saveDial(int dial) {
+    if (!open()) return;
+    const uint32_t start = micros();
+    prefs.putInt(kDialKey, dial);
+    lastSaveUs_ = micros() - start;
+    ++saves_;
 }
 
 }  // namespace radio
