@@ -30,12 +30,13 @@ bool Radio::begin() {
     ok &= p_.clock.begin();
     const bool storageOk = p_.storage.begin();
     ok &= storageOk;
-    ok &= p_.audio.begin(kSampleRate);
 
     if (storageOk) {
         loadRadioConfig(p_.storage, config_);
         loadStations();
+        warmUp_.begin(p_.storage);
     }
+    mixer_.setRadioLevel(0, true);
     dialMin_ = tenths(config_.dialMinMhz);
     dialMax_ = std::max(dialMin_, tenths(config_.dialMaxMhz));
     int restored = dial_;
@@ -47,6 +48,8 @@ bool Radio::begin() {
     mixer_.configure(config_.audio);
     retune();
     dirty_ = true;
+    // Last: once it starts, the output needs feeding, and loading takes a while.
+    ok &= p_.audio.begin(kSampleRate);
     return ok;
 }
 
@@ -169,6 +172,7 @@ void Radio::recoverStorage(int64_t nowMs) {
     if (nowMs < nextRecoveryMs_) return;
 
     player_.stop();
+    warmUp_.stop();
     for (auto& s : stations_) s.schedule.close();
     p_.storage.recover();
     for (auto& s : stations_)
@@ -185,7 +189,11 @@ void Radio::renderAudio() {
     size_t avail = p_.audio.availableFrames();
     while (avail >= kAudioBlock) {
         player_.read(stationBuf_, kAudioBlock);
-        mixer_.render(stationBuf_, tuned_.signal, outBuf_, kAudioBlock, beforeVolumeBuf_);
+        const bool boot = warmUp_.playing();
+        warmUp_.read(bootBuf_, kAudioBlock);
+        mixer_.setRadioLevel(warmUp_.radioLevel());
+        mixer_.render(stationBuf_, tuned_.signal, outBuf_, kAudioBlock, beforeVolumeBuf_,
+                      boot ? bootBuf_ : nullptr);
         p_.display.audio(beforeVolumeBuf_, kAudioBlock);
         for (size_t i = 0; i < kAudioBlock; ++i) {
             statStationPeak_ = std::max(statStationPeak_, std::abs(static_cast<int>(stationBuf_[i])));

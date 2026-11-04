@@ -10,6 +10,7 @@
 #include "core/StationPlayer.h"
 #include "core/Tuner.h"
 #include "core/VolumeKnob.h"
+#include "core/WarmUp.h"
 #include "platform/Platform.h"
 
 namespace radio {
@@ -87,10 +88,12 @@ private:
     Platform& p_;
     StationPlayer player_;
     Mixer mixer_;
+    WarmUp warmUp_;
     int playerStation_ = -1;
     int16_t stationBuf_[kAudioBlock] = {};
     int16_t outBuf_[kAudioBlock] = {};
     int16_t beforeVolumeBuf_[kAudioBlock] = {};
+    int16_t bootBuf_[kAudioBlock] = {};
     uint32_t statFrames_ = 0;
     int statStationPeak_ = 0;
     int statOutputPeak_ = 0;

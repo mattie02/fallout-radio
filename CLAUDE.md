@@ -75,7 +75,7 @@ Power: a USB-C charger (5V, 2A or more) feeds a USB-C breakout (with 5.1 kΩ CC 
 
 - **Volume pot (10k linear, with switch):** clicks the radio on at the bottom of its travel. Firmware reads GPIO 4, averages and applies hysteresis, treats the ends as hard 0% and 100%, and maps position to volume with a logarithmic (perceptual) curve. There is no other volume control.
 - **Rotary encoder:** tuning only. There's no physical dial pointer; the screen is the dial. The last dial position is saved to NVS (ESP32 flash) 3 seconds after tuning stops and restored on boot; the simulator keeps it in `.pio/simulator_dial.txt`. The encoder button is free for another feature.
-- **Power cycling is normal use:** the pot switch cuts all power. Never write to the SD card. Boot fast, fade audio in, and cover the boot time with a warm-up hum. Clock-based stations resume "live" automatically.
+- **Power cycling is normal use:** the pot switch cuts all power. Never write to the SD card. Boot fast, then `core/WarmUp` plays `/system/boot.mp3` (a warm-up hum) while the radio fades up through its last 1.5 s; with no file, it's just the fade. The station plays muted underneath, so clock-based stations resume "live" automatically.
 
 ### Round TFT display
 
@@ -140,7 +140,7 @@ MP3 decoding should use the same decoder on both targets (for example, the decod
 ```
 /system/
   config.json            # dial range, station frequencies, signal falloff
-  boot.mp3               # optional tube warm-up sound
+  boot.mp3               # optional tube warm-up sound; tools/prep/make_boot_sound.py makes one
 /stations/
   01_crooner/
     station.json         # name, frequency, break rules

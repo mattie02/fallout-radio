@@ -33,6 +33,7 @@ bool loadRadioConfig(Storage& storage, RadioConfig& config) {
     a.lowHz = audio["eq_low_hz"] | a.lowHz;
     a.highHz = audio["eq_high_hz"] | a.highHz;
     a.drive = audio["drive"] | a.drive;
+    a.bootLevel = audio["boot_level"] | a.bootLevel;
     return true;
 }
 
