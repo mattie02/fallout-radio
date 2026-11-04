@@ -7,6 +7,8 @@
 #include <string>
 
 #include "platform/Platform.h"
+#include "ui/Framebuffer.h"
+#include "ui/RoundDial.h"
 
 namespace radio {
 
@@ -37,24 +39,34 @@ private:
     float knob_ = 1;
 };
 
-// Draws the 128x32 framebuffer scaled up, white on black, inside a bezel.
+// Shows either screen, scaled up, inside a bezel: the round TFT dial (masked to
+// its circle) or the white-on-black 128x32 OLED. Both are drawn by the same code
+// as on the radio.
 class DesktopDisplay : public Display {
 public:
-    static constexpr int kScale = 4;
-    static constexpr int kBezel = 12;
+    enum class Screen { Round, Oled };
 
+    explicit DesktopDisplay(Screen screen) : screen_(screen) {}
     ~DesktopDisplay() override;
     bool begin() override;
-    void show(const uint8_t* buffer) override;
+    void show(const DisplayState& state) override;
     // Re-presents the last frame (e.g. after the window was exposed).
     void refresh();
     void setTitle(const std::string& title);
+    void toggleScreen();
 
 private:
+    bool applyScreen();
+    void drawRound(uint8_t* pixels, int pitch);
+    void drawOled(uint8_t* pixels, int pitch);
+
+    Screen screen_;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     SDL_Texture* texture_ = nullptr;
-    uint8_t last_[kDisplayBufferSize] = {};
+    DisplayState state_;
+    RoundDial round_;
+    Framebuffer oled_;
 };
 
 // Simulated wall clock with pause, speed-up and jump, for testing schedules.

@@ -12,11 +12,6 @@
 
 namespace radio {
 
-constexpr int kDisplayWidth = 128;
-constexpr int kDisplayHeight = 32;
-// 1 bit per pixel in SSD1306 page order: byte (x + (y / 8) * width), bit (y % 8).
-constexpr size_t kDisplayBufferSize = kDisplayWidth * kDisplayHeight / 8;
-
 constexpr uint32_t kSampleRate = 44100;
 
 // Mono 16-bit PCM output. Must never block.
@@ -44,12 +39,24 @@ public:
     virtual InputState read() = 0;
 };
 
+// What the radio wants on screen. How it looks is up to each screen (src/ui).
+struct DisplayState {
+    int dial = 0;  // dial position and range, tenths of MHz
+    int dialMin = 0;
+    int dialMax = 0;
+    char station[32] = "";  // name of the station in range, empty if none
+    float signal = 0;       // 0..1
+    int hour = 0;           // local time
+    int minute = 0;
+    float volume = -1;      // knob level 0..1, -1 before the first reading
+    bool flash = false;     // encoder button feedback
+};
+
 class Display {
 public:
     virtual ~Display() = default;
     virtual bool begin() = 0;
-    // buffer holds kDisplayBufferSize bytes.
-    virtual void show(const uint8_t* buffer) = 0;
+    virtual void show(const DisplayState& state) = 0;
 };
 
 class Clock {

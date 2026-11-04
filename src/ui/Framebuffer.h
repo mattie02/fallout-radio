@@ -1,8 +1,7 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
-
-#include "platform/Platform.h"
 
 namespace radio {
 
@@ -10,8 +9,10 @@ namespace radio {
 // to the panel as-is.
 class Framebuffer {
 public:
-    static constexpr int kWidth = kDisplayWidth;
-    static constexpr int kHeight = kDisplayHeight;
+    static constexpr int kWidth = 128;
+    static constexpr int kHeight = 32;
+    // 1 bit per pixel: byte (x + (y / 8) * width), bit (y % 8).
+    static constexpr size_t kBufferSize = kWidth * kHeight / 8;
     static constexpr int kCharWidth = 6;  // 5px glyph + 1px gap, at scale 1
     static constexpr int kCharHeight = 8;
 
@@ -32,7 +33,7 @@ public:
 private:
     void drawChar(int x, int y, char c, int scale);
 
-    uint8_t buf_[kDisplayBufferSize] = {};
+    uint8_t buf_[kBufferSize] = {};
 };
 
 }  // namespace radio

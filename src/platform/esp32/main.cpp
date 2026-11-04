@@ -4,6 +4,7 @@
 //   time YYYY-MM-DD HH:MM[:SS]   set the RTC (recipient's local time)
 //   tune MHZ                     move the dial, e.g. "tune 91.5"
 //   status                       print time, tuning and what's playing
+//   display                      print round display stats
 
 #include <Arduino.h>
 
@@ -13,6 +14,7 @@
 #include "core/CivilTime.h"
 #include "core/Radio.h"
 #include "platform/esp32/Esp32Platform.h"
+#include "platform/esp32/Esp32Tft.h"
 
 // minimp3 keeps ~16 KB of scratch on the stack while decoding a frame; the
 // default 8 KB loop task stack overflows (and the board resets) on the first
@@ -23,7 +25,25 @@ namespace {
 
 radio::Esp32Audio audio;
 radio::Esp32Input input;
-radio::Esp32Display display;
+radio::Esp32Oled oled;
+radio::Esp32Tft tft;
+
+// Either screen can be missing: an absent OLED is detected and skipped, and the
+// TFT has no way to answer, so it just draws.
+class Screens : public radio::Display {
+public:
+    bool begin() override {
+        const bool hasOled = oled.begin();
+        Serial.printf("OLED: %s\n", hasOled ? "found" : "not found");
+        return tft.begin();
+    }
+    void show(const radio::DisplayState& state) override {
+        tft.show(state);
+        oled.show(state);
+    }
+};
+
+Screens display;
 radio::Esp32Clock clock_;
 radio::Esp32Storage storage;
 radio::Platform platform{audio, input, display, clock_, storage};
@@ -76,6 +96,15 @@ void printAudio() {
     statsSinceMs = millis();
 }
 
+void printDisplay() {
+    const radio::Esp32Tft::Stats t = tft.stats();
+    Serial.printf("round display: %s, %u frames, last draw %u us, last push %u us (%u rows)\n",
+                  t.ready ? "running" : "NOT RUNNING (no memory for frames?)", t.frames, t.drawUs,
+                  t.pushUs, t.rows);
+    Serial.printf("psram: %u bytes, %u free\n", static_cast<unsigned>(ESP.getPsramSize()),
+                  static_cast<unsigned>(ESP.getFreePsram()));
+}
+
 void runCommand(const char* line) {
     if (std::strncmp(line, "time ", 5) == 0) {
         radio::CivilTime t;
@@ -89,6 +118,8 @@ void runCommand(const char* line) {
         printStatus();
     } else if (std::strcmp(line, "audio") == 0) {
         printAudio();
+    } else if (std::strcmp(line, "display") == 0) {
+        printDisplay();
     } else if (std::strncmp(line, "volume ", 7) == 0) {
         radioApp.setVolume(static_cast<float>(std::atof(line + 7)));
         Serial.printf("volume %.2f\n", std::atof(line + 7));
@@ -96,7 +127,7 @@ void runCommand(const char* line) {
         radioApp.tuneTo(static_cast<float>(std::atof(line + 5)));
         printStatus();
     } else {
-        Serial.println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio");
+        Serial.println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio | display");
     }
 }
 
