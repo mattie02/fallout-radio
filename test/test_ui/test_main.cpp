@@ -5,14 +5,15 @@
 
 #include <unity.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 
 #include "ui/Framebuffer.h"
-#include "ui/MonoDial.h"
 #include "ui/RoundDial.h"
+#include "ui/Waveform.h"
 
 using namespace radio;
 
@@ -103,11 +104,19 @@ int differingPixels(const uint16_t* a, const uint16_t* b) {
     return n;
 }
 
-int monoNeedleX(const Framebuffer& fb) {
-    // The needle is the only thing lit on row 25 (ticks start lower).
-    for (int x = 0; x < Framebuffer::kWidth; ++x)
-        if (fb.getPixel(x, 25)) return x;
-    return -1;
+constexpr int kCaptured = static_cast<int>(WaveformCapture::kSamples);
+
+void sine(int16_t* out, float hz, float amplitude, float phase = 0) {
+    for (int i = 0; i < kCaptured; ++i) {
+        out[i] = static_cast<int16_t>(amplitude * std::sin(phase + 2 * 3.14159265f * hz * i / 44100.0f));
+    }
+}
+
+int litPixels(const Framebuffer& fb) {
+    int n = 0;
+    for (int y = 0; y < Framebuffer::kHeight; ++y)
+        for (int x = 0; x < Framebuffer::kWidth; ++x) n += fb.getPixel(x, y);
+    return n;
 }
 
 }  // namespace
@@ -115,24 +124,80 @@ int monoNeedleX(const Framebuffer& fb) {
 void setUp() {}
 void tearDown() {}
 
-void test_mono_needle_spans_the_scale() {
+void test_waveform_silence_is_a_flat_line() {
+    int16_t samples[kCaptured] = {};
     Framebuffer fb;
-    drawMonoDial(sample(880, "", 0), fb);
-    TEST_ASSERT_EQUAL(2, monoNeedleX(fb));
-    drawMonoDial(sample(1080, "", 0), fb);
-    TEST_ASSERT_EQUAL(Framebuffer::kWidth - 3, monoNeedleX(fb));
-    drawMonoDial(sample(986, "Crooner Ballads", 1), fb);
-    dumpMono(fb, "oled");
+    drawWaveform(samples, fb);
+    TEST_ASSERT_EQUAL(Framebuffer::kWidth, litPixels(fb));
+    for (int x = 0; x < Framebuffer::kWidth; ++x) TEST_ASSERT_TRUE(fb.getPixel(x, 16));
 }
 
-void test_mono_flash_inverts() {
+void test_waveform_trace_is_unbroken_and_stays_on_screen() {
+    int16_t samples[kCaptured];
+    sine(samples, 440, 32767);  // louder than the scale: clipped at the edges
     Framebuffer fb;
-    DisplayState s = sample(915, "", 0);
-    drawMonoDial(s, fb);
-    const bool corner = fb.getPixel(127, 31);
-    s.flash = true;
-    drawMonoDial(s, fb);
-    TEST_ASSERT_NOT_EQUAL(corner, fb.getPixel(127, 31));
+    drawWaveform(samples, fb);
+    bool top = false, bottom = false;
+    for (int x = 0; x < Framebuffer::kWidth; ++x) {
+        bool lit = false;
+        for (int y = 0; y < Framebuffer::kHeight; ++y) lit |= fb.getPixel(x, y);
+        TEST_ASSERT_TRUE(lit);
+        top |= fb.getPixel(x, 0);
+        bottom |= fb.getPixel(x, Framebuffer::kHeight - 1);
+    }
+    TEST_ASSERT_TRUE(top);
+    TEST_ASSERT_TRUE(bottom);
+    dumpMono(fb, "oled_clipped_tone");
+}
+
+void test_waveform_tone_stands_still() {
+    // The same tone caught at different moments must draw (nearly) the same.
+    int16_t a[kCaptured], b[kCaptured];
+    Framebuffer fa, fb;
+    sine(a, 440, 15000);
+    drawWaveform(a, fa);
+    dumpMono(fa, "oled_tone");
+    for (float phase : {0.7f, 2.0f, 4.5f}) {
+        sine(b, 440, 15000, phase);
+        drawWaveform(b, fb);
+        int differing = 0;
+        for (int y = 0; y < Framebuffer::kHeight; ++y)
+            for (int x = 0; x < Framebuffer::kWidth; ++x) differing += fa.getPixel(x, y) != fb.getPixel(x, y);
+        TEST_ASSERT_LESS_THAN(litPixels(fa) / 4, differing);
+    }
+}
+
+void test_waveform_noise_without_a_trigger_still_draws() {
+    int16_t samples[kCaptured];
+    for (int i = 0; i < kCaptured; ++i) samples[i] = 5000 + (std::rand() % 2000);  // never below zero
+    Framebuffer fb;
+    drawWaveform(samples, fb);
+    TEST_ASSERT_GREATER_OR_EQUAL(Framebuffer::kWidth, litPixels(fb));
+
+    for (int i = 0; i < kCaptured; ++i) samples[i] = static_cast<int16_t>(std::rand() % 12000 - 6000);
+    drawWaveform(samples, fb);
+    dumpMono(fb, "oled_static");
+}
+
+void test_capture_keeps_the_latest_in_order() {
+    WaveformCapture capture;
+    int16_t block[256];
+    int16_t next = 0;
+    for (int b = 0; b < 9; ++b) {  // wraps around the ring
+        for (int16_t& s : block) s = next++;
+        capture.push(block, 256);
+    }
+    int16_t out[kCaptured];
+    capture.snapshot(out);
+    for (int i = 0; i < kCaptured; ++i) TEST_ASSERT_EQUAL(next - kCaptured + i, out[i]);
+
+    // More than it holds at once: only the end is kept.
+    int16_t big[kCaptured + 10];
+    for (int i = 0; i < kCaptured + 10; ++i) big[i] = static_cast<int16_t>(i);
+    capture.push(big, kCaptured + 10);
+    capture.snapshot(out);
+    TEST_ASSERT_EQUAL(10, out[0]);
+    TEST_ASSERT_EQUAL(kCaptured + 9, out[kCaptured - 1]);
 }
 
 void test_round_stays_inside_the_circle() {
@@ -220,8 +285,11 @@ void test_round_samples_for_looking_at() {
 
 int main(int, char**) {
     UNITY_BEGIN();
-    RUN_TEST(test_mono_needle_spans_the_scale);
-    RUN_TEST(test_mono_flash_inverts);
+    RUN_TEST(test_waveform_silence_is_a_flat_line);
+    RUN_TEST(test_waveform_trace_is_unbroken_and_stays_on_screen);
+    RUN_TEST(test_waveform_tone_stands_still);
+    RUN_TEST(test_waveform_noise_without_a_trigger_still_draws);
+    RUN_TEST(test_capture_keeps_the_latest_in_order);
     RUN_TEST(test_round_stays_inside_the_circle);
     RUN_TEST(test_round_needle_follows_the_dial);
     RUN_TEST(test_round_shows_every_change);

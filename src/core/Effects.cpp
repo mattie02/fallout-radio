@@ -96,10 +96,11 @@ void VintageEffects::setKnobGain(float gain, bool immediate) {
     if (immediate) knob_ = knobTarget_;
 }
 
-float VintageEffects::process(float x) {
+float VintageEffects::process(float x, float* beforeVolume) {
     x = highpass_.process(x);
     x = lowpass2_.process(lowpass1_.process(x));
     x = softClip(x * drive_) * makeup_;
+    if (beforeVolume) *beforeVolume = x;
     knob_ += kKnobSmoothing * (knobTarget_ - knob_);
     return x * volume_ * knob_;
 }

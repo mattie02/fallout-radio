@@ -16,7 +16,6 @@
 
 #include "core/CivilTime.h"
 #include "platform/esp32/Pins.h"
-#include "ui/MonoDial.h"
 
 namespace radio {
 
@@ -208,7 +207,7 @@ bool oledCommands(std::initializer_list<uint8_t> bytes) {
 
 bool Esp32Oled::begin() {
     ensureI2c();
-    ok_ = oledCommands({
+    const bool ok = oledCommands({
         0xAE,        // display off
         0xD5, 0x80,  // clock divide
         0xA8, 0x1F,  // multiplex: 32 rows
@@ -227,25 +226,59 @@ bool Esp32Oled::begin() {
         0x2E,        // scrolling off
         0xAF,        // display on
     });
-    return ok_;
+    if (!ok) return false;
+    // Core 0: the Arduino loop (and with it the audio) runs on core 1.
+    return xTaskCreatePinnedToCore(taskEntry, "oled", 4096, this, 1, &task_, 0) == pdPASS;
 }
 
-void Esp32Oled::show(const DisplayState& state) {
-    if (!ok_) return;
-    drawMonoDial(state, fb_);
-    // I2C is slow and runs on the audio loop: skip changes this screen doesn't
-    // show, such as the volume.
-    if (sentAny_ && std::memcmp(sent_, fb_.data(), sizeof(sent_)) == 0) return;
-    std::memcpy(sent_, fb_.data(), sizeof(sent_));
-    sentAny_ = true;
-    const uint8_t* buffer = fb_.data();
-    oledCommands({0x21, 0, 127, 0x22, 0, 3});  // whole screen
-    constexpr size_t kChunk = 64;  // fits the Wire buffer
-    for (size_t i = 0; i < Framebuffer::kBufferSize; i += kChunk) {
-        Wire.beginTransmission(pins::kOledAddress);
-        Wire.write(0x40);  // control byte: data follows
-        Wire.write(buffer + i, kChunk);
-        Wire.endTransmission();
+void Esp32Oled::audio(const int16_t* samples, size_t count) {
+    if (!task_) return;
+    portENTER_CRITICAL(&lock_);
+    capture_.push(samples, count);
+    portEXIT_CRITICAL(&lock_);
+}
+
+Esp32Oled::Stats Esp32Oled::stats() const {
+    Stats s;
+    s.present = task_ != nullptr;
+    s.frames = frames_;
+    s.pushUs = pushUs_;
+    return s;
+}
+
+void Esp32Oled::taskEntry(void* self) {
+    static_cast<Esp32Oled*>(self)->run();
+}
+
+void Esp32Oled::run() {
+    constexpr TickType_t kFrameTicks = pdMS_TO_TICKS(33);  // ~30 fps
+    static int16_t samples[WaveformCapture::kSamples];
+    static Framebuffer fb;
+    static uint8_t sent[Framebuffer::kBufferSize];
+    bool sentAny = false;
+
+    TickType_t wake = xTaskGetTickCount();
+    for (;;) {
+        vTaskDelayUntil(&wake, kFrameTicks);
+        portENTER_CRITICAL(&lock_);
+        capture_.snapshot(samples);
+        portEXIT_CRITICAL(&lock_);
+        drawWaveform(samples, fb);
+        if (sentAny && std::memcmp(sent, fb.data(), sizeof(sent)) == 0) continue;  // e.g. silence
+        std::memcpy(sent, fb.data(), sizeof(sent));
+        sentAny = true;
+
+        const uint32_t start = micros();
+        oledCommands({0x21, 0, 127, 0x22, 0, 3});  // whole screen
+        constexpr size_t kChunk = 64;  // fits the Wire buffer
+        for (size_t i = 0; i < Framebuffer::kBufferSize; i += kChunk) {
+            Wire.beginTransmission(pins::kOledAddress);
+            Wire.write(0x40);  // control byte: data follows
+            Wire.write(fb.data() + i, kChunk);
+            Wire.endTransmission();
+        }
+        pushUs_ = micros() - start;
+        ++frames_;
     }
 }
 

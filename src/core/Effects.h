@@ -54,7 +54,8 @@ public:
     // smoothed (~50 ms) so knob steps never click; `immediate` skips that
     // (the first reading at boot).
     void setKnobGain(float gain, bool immediate);
-    float process(float x);
+    // beforeVolume, if given, receives the sample before any volume is applied.
+    float process(float x, float* beforeVolume = nullptr);
 
 private:
     Biquad highpass_, lowpass1_, lowpass2_;

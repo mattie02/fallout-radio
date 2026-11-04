@@ -4,16 +4,20 @@
 //   Audio:   I2S (ESP-IDF 5 std driver) -> MAX98357A
 //   Input:   KY-040 encoder on the PCNT hardware counter + debounced button,
 //            volume pot on the ADC
-//   Display: GC9A01 round TFT (Esp32Tft.h) and/or SSD1306 128x32 over I2C
-//            (minimal driver, no library)
+//   Screens: GC9A01 round TFT dial (Esp32Tft.h); SSD1306 128x32 audio waveform
+//            over I2C (minimal driver, no library)
 //   Clock:   DS3231 over I2C, read occasionally and extrapolated with millis()
 //   Storage: SD card over SPI
 
 #include <driver/i2s_std.h>
 #include <driver/pulse_cnt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include <atomic>
 
 #include "platform/Platform.h"
-#include "ui/Framebuffer.h"
+#include "ui/Waveform.h"
 
 namespace radio {
 
@@ -60,16 +64,31 @@ private:
     uint32_t nextKnobMs_ = 0;
 };
 
-class Esp32Oled : public Display {
+// Draws the audio waveform. A frame takes ~13 ms on the I2C bus, far too long
+// for the audio loop at this frame rate, so a task on the other core does it;
+// audio() only copies samples. The bus is shared with the RTC, which the Wire
+// library's lock makes safe.
+class Esp32Oled {
 public:
-    bool begin() override;
-    void show(const DisplayState& state) override;
+    // False if no OLED answers: then nothing runs and audio() does nothing.
+    bool begin();
+    void audio(const int16_t* samples, size_t count);
+
+    struct Stats {
+        bool present = false;
+        uint32_t frames = 0;  // frames sent (unchanged ones aren't)
+        uint32_t pushUs = 0;  // last frame
+    };
+    Stats stats() const;
 
 private:
-    bool ok_ = false;
-    Framebuffer fb_;
-    uint8_t sent_[Framebuffer::kBufferSize] = {};
-    bool sentAny_ = false;
+    static void taskEntry(void* self);
+    void run();
+
+    TaskHandle_t task_ = nullptr;
+    portMUX_TYPE lock_ = portMUX_INITIALIZER_UNLOCKED;
+    WaveformCapture capture_;
+    std::atomic<uint32_t> frames_{0}, pushUs_{0};
 };
 
 class Esp32Clock : public Clock {

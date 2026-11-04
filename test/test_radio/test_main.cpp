@@ -115,6 +115,17 @@ void test_display_shows_station_and_volume() {
     TEST_ASSERT_EQUAL_STRING("", r.display.state.station);
 }
 
+void test_display_gets_audio_even_with_volume_down() {
+    Rig r;
+    r.radio.begin();
+    r.input.next.knob = 0;  // knob all the way down
+    r.audio.room = 2560;
+    r.radio.update();
+    TEST_ASSERT_EQUAL(2560, r.display.audioSamples);
+    TEST_ASSERT_GREATER_THAN(1000, r.display.audioPeak);  // the static
+    for (int16_t s : r.audio.written) TEST_ASSERT_EQUAL(0, s);  // silent speaker
+}
+
 void test_loads_valid_stations_sorted_by_frequency() {
     Rig r;
     addTwoStations(r.storage);
@@ -178,6 +189,7 @@ int main() {
     RUN_TEST(test_dial_range_from_config);
     RUN_TEST(test_button_flashes_display);
     RUN_TEST(test_display_shows_station_and_volume);
+    RUN_TEST(test_display_gets_audio_even_with_volume_down);
     RUN_TEST(test_loads_valid_stations_sorted_by_frequency);
     RUN_TEST(test_tuning_and_now_playing);
     RUN_TEST(test_station_without_schedule);

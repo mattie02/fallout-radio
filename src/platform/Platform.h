@@ -57,6 +57,12 @@ public:
     virtual ~Display() = default;
     virtual bool begin() = 0;
     virtual void show(const DisplayState& state) = 0;
+    // Mono audio as it's rendered, before the volume knob, for a screen that
+    // draws it. Called from the audio path, so it must never block.
+    virtual void audio(const int16_t* samples, size_t count) {
+        (void)samples;
+        (void)count;
+    }
 };
 
 class Clock {

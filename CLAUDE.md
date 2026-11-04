@@ -35,7 +35,7 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 ## Hardware
 
 - **MCU:** ESP32-S3-WROOM-1 N16R8 dev board: 16 MB flash, 8 MB octal PSRAM (has a 5VIN pin and both COM/UART and native USB ports)
-- **Displays:** 1.28" GC9A01 round TFT (240×240, RGB, 4-wire SPI), the dial face; and a 0.91" SSD1306 128×32 OLED, I2C, address 0x3C. Each is optional: firmware drives whichever is connected.
+- **Displays:** 1.28" GC9A01 round TFT (240×240, RGB, 4-wire SPI), the dial face; and a 0.91" SSD1306 128×32 OLED, I2C, address 0x3C, showing the audio as a live waveform. Each is optional: firmware drives whichever is connected.
 - **Input:** rotary encoder with push button (KY-040 style)
 - **Storage:** micro SD module (SPI, onboard regulator and level shifter, so it **must be powered from 5V**)
 - **Audio:** MAX98357A I2S amp, 5-pin board (G, V, BCL, LRC, DIN) → single 4–8 Ω speaker (mono)
@@ -100,7 +100,7 @@ src/
     Effects        # vintage EQ / band-pass, crackle, volume
     Radio          # ties it together; the main state machine
   ui/              # how each screen looks: DisplayState -> pixels. Shared by both targets, no hardware access
-    MonoDial       # the 128x32 OLED, on Framebuffer
+    Waveform       # the 128x32 OLED: an oscilloscope trace of the audio, on Framebuffer
     RoundDial      # the 240x240 round TFT, with LovyanGFX sprites
   platform/
     Platform.h     # interfaces: AudioOut, Input, Display, Clock, Storage
@@ -110,6 +110,12 @@ tools/
   prep/            # Python content-prep and schedule generator (runs on the Mac)
 content/           # the source "SD card" folder (desktop reads it directly; gets copied to the card)
 ```
+
+### What runs on which core (ESP32)
+
+- **Core 1, Arduino loop:** input, SD reads, MP3 decoding, mixing, I2S. Audio stays together here, on one thread, with no locks. Measured at about 24% of the core playing a station (decode and SD 12%, mixing 11%), and its worst stall (~15 ms) is well inside the ~139 ms output buffer. Don't split it up without a measured reason.
+- **Core 0, screen tasks:** the round dial and the waveform. Both take many milliseconds per frame on their buses, so neither may run on the audio loop. The audio loop only hands them the latest state or samples, inside a very short critical section.
+- The I2C bus is shared between the OLED task and the RTC on the loop; the Wire library's lock covers that.
 
 ### PlatformIO environments
 
@@ -123,7 +129,7 @@ MP3 decoding should use the same decoder on both targets (for example, the decod
 - Mouse wheel / ← → : turn the dial. Click / Space : encoder button.
 - ↑ ↓ : volume pot. P : power switch (simulates a full power cycle and boot).
 - **Time controls** (essential for testing the schedule): pause the clock, fast-forward, and jump to a specific date and time (e.g. Dec 24 23:58).
-- Display: the round TFT dial at ×2 or the OLED at ×4. D switches between them; `--screen round|oled` picks one at startup.
+- Display: the round TFT dial at ×2 or the OLED waveform at ×4. D switches between them; `--screen round|oled` picks one at startup.
 
 ---
 
@@ -175,7 +181,7 @@ Static is **generated in code** (filtered noise), not stored as files.
 ## Conventions
 
 - `core/` never includes Arduino, ESP-IDF or SDL headers. If something needs hardware, add an interface to `Platform.h`. Exception: ArduinoJson, which is portable C++ and used on both targets for the JSON config files.
-- `core/` decides what to show (`DisplayState`), `ui/` decides how it looks. `core/` doesn't include `ui/`.
+- `core/` decides what to show (`DisplayState`, plus the audio itself for the waveform, before the volume knob so the trace doesn't shrink as you turn it down), `ui/` decides how it looks. `core/` doesn't include `ui/`.
 - Never block the audio path. `Radio::update()` is called often; the display only redraws on change.
 - Keep the desktop and ESP32 builds both compiling at all times.
 - Prefer small, testable pieces. Schedule lookup and Tuner math should have unit tests (`pio test -e desktop`).

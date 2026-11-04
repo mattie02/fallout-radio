@@ -7,8 +7,6 @@
 #include <cstdio>
 #include <ctime>
 
-#include "ui/MonoDial.h"
-
 namespace radio {
 
 // --- Audio ------------------------------------------------------------------
@@ -150,6 +148,16 @@ void DesktopDisplay::show(const DisplayState& state) {
     refresh();
 }
 
+void DesktopDisplay::audio(const int16_t* samples, size_t count) {
+    capture_.push(samples, count);
+}
+
+void DesktopDisplay::animate(uint32_t nowMs) {
+    if (screen_ != Screen::Oled || static_cast<int32_t>(nowMs - nextFrameMs_) < 0) return;
+    nextFrameMs_ = nowMs + 33;  // ~30 fps, as on the radio
+    refresh();
+}
+
 void DesktopDisplay::drawRound(uint8_t* pixels, int pitch) {
     const uint16_t* src = round_.draw(state_);
     if (!src) return;
@@ -174,7 +182,9 @@ void DesktopDisplay::drawRound(uint8_t* pixels, int pitch) {
 void DesktopDisplay::drawOled(uint8_t* pixels, int pitch) {
     constexpr uint32_t kOn = 0xFFE8F0FF;   // SSD1306 white, slightly cool
     constexpr uint32_t kOff = 0xFF050608;  // unlit panel
-    drawMonoDial(state_, oled_);
+    int16_t samples[WaveformCapture::kSamples];
+    capture_.snapshot(samples);
+    drawWaveform(samples, oled_);
     for (int y = 0; y < Framebuffer::kHeight; ++y) {
         auto* row = reinterpret_cast<uint32_t*>(pixels + y * pitch);
         for (int x = 0; x < Framebuffer::kWidth; ++x) row[x] = oled_.getPixel(x, y) ? kOn : kOff;

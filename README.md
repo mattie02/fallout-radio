@@ -56,7 +56,7 @@ If the dial moves two stations per click, or turns the wrong way, change `kEncod
 |---|---|
 | Mouse wheel, ← → | Turn the dial 0.1 MHz (Shift + arrow: 1 MHz) |
 | Click, Space | Encoder button |
-| D | Switch between the round TFT and the OLED |
+| D | Switch between the round TFT dial and the OLED waveform |
 | P | Pause / resume the clock |
 | ] / [ | Clock faster / slower (1×, 10×, 60×, 600×, 3600×, 86400×) |
 | R | Back to real time |
