@@ -407,6 +407,16 @@ void noteTime(uint32_t& slowest, uint32_t startUs) {
 
 constexpr char kMount[] = "/sd";  // where SD.begin() mounts the card in the VFS
 
+// Files open at once. Every station holds its schedule.txt open for good, and
+// on top of those sit the playing MP3 and the odd short-lived config file. The
+// library's default of 5 is used up by five stations, and then every MP3 fails
+// to open and plays as silence.
+constexpr uint8_t kSdMaxFiles = 12;
+
+bool mountCard() {
+    return SD.begin(pins::kSdCs, sdSpi, pins::kSdSpiHz, kMount, kSdMaxFiles);
+}
+
 // POSIX file descriptors on the mounted card: each read goes to the FAT
 // driver in one call. (The Arduino File wrapper buffers 4 KB per read, so a
 // 64-byte schedule record cost a full 4 KB card read; unbuffered stdio is
@@ -443,7 +453,7 @@ private:
 
 bool Esp32Storage::begin() {
     sdSpi.begin(pins::kSdSck, pins::kSdMiso, pins::kSdMosi, pins::kSdCs);
-    ok_ = SD.begin(pins::kSdCs, sdSpi, pins::kSdSpiHz, kMount);
+    ok_ = mountCard();
     return ok_;
 }
 
@@ -469,7 +479,7 @@ std::unique_ptr<File> Esp32Storage::open(const char* path) {
 
 bool Esp32Storage::recover() {
     SD.end();
-    ok_ = SD.begin(pins::kSdCs, sdSpi, pins::kSdSpiHz, kMount);
+    ok_ = mountCard();
     return ok_;
 }
 
