@@ -63,6 +63,10 @@ Optional `meta.json` next to the source files, keyed by source filename:
   - `silence`: seconds of dead air, `n` or `[min, max]`.
   - `chance`: probability the step happens at all (default 1).
   - Categories with no MP3s are skipped.
+- `daily` (optional): clips that start at a set time every day, e.g. `"daily": [{ "at": "18:00", "pick": "whistler", "count": 2 }]`.
+  - `at` is 24-hour `HH:MM` local time; `pick` and `count` work as in `pattern`.
+  - Whatever is playing at that time is cut short, and the pattern resumes when the slot's clips finish. A slot still running when the next one is due is cut short too.
+  - The schedule repeats weekly, so a slot airs the same clips on the same weekday each week. To air a serial in order, number it as an arc in `meta.json`; only the first 7 × `count` parts will air.
 - `no_repeat_hours`: a clip won't replay within this many hours, per category with `*` as the default. If there isn't enough audio to manage that, the least recently played clip is used (never the same clip twice in a row) and a warning is printed.
 - `seed` (optional): the same content and seed always give the same schedule. Defaults to a hash of the folder name.
 
