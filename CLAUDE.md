@@ -13,7 +13,7 @@ The vibe is a 1940s–50s post-apocalyptic radio, inspired by Fallout. All stati
 | # | Station | MHz | Folder | Content |
 |---|---|---|---|---|
 | 1 | Crooner ballads | 91.5 | `01_crooner` | Cheerful DJ, general chatter |
-| 2 | News | 95.3 | `02_news` | News reels, each clip self-contained (secretly about the recipient's life) |
+| 2 | Galaxy News Radio | 95.3 | `02_news` | News reels, each clip self-contained (secretly about the recipient's life) |
 | 3 | Big band / jazz | 99.7 | `03_bigband` | Parody ads |
 | 4 | Country / western | 103.1 | `04_country` | Gravelly DJ |
 | 5 | Late Night Talk | 88.9 | `05_talk` | Recordings of the talk show Coast to Coast AM, whole episodes back to back; no DJ, IDs or ads |
