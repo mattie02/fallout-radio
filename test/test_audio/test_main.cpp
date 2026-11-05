@@ -207,6 +207,9 @@ void test_radio_plays_tuned_station() {
     p.clock.t = 20808LL * 86400;  // a Monday 00:00
     Radio radio(p.platform);
     radio.begin();  // dial starts at 98.6: on the station
+    p.audio.room = 2 * kSecond;  // through the warm-up fade
+    radio.update();
+    p.audio.written.clear();
 
     p.audio.room = kSecond / 2;
     radio.update();
@@ -278,6 +281,107 @@ struct ToneRadio : FakePlatform {
     }
 };
 
+// --- Warm-up ------------------------------------------------------------------
+
+struct WarmUpRadio : FakePlatform {
+    Radio radio{platform};
+    std::vector<int16_t>& out = audio.written;
+    // Renders up to the given time since power-on.
+    void renderUntil(double seconds) {
+        const size_t want = static_cast<size_t>(seconds * kSampleRate);
+        if (want > out.size()) audio.room = (want - out.size()) / 256 * 256;
+        radio.update();
+    }
+    // Rendering stops on a block boundary, so `to` may be a little past the end.
+    size_t lengthBetween(double from, double to) const {
+        return std::min(static_cast<size_t>(to * kSampleRate), out.size()) -
+               static_cast<size_t>(from * kSampleRate);
+    }
+    double level(double from, double to) const {
+        return rms(out.data() + static_cast<size_t>(from * kSampleRate), lengthBetween(from, to));
+    }
+    double hz(double from, double to) const {
+        return frequency(out.data() + static_cast<size_t>(from * kSampleRate), lengthBetween(from, to));
+    }
+};
+
+void test_warmup_without_boot_file_just_fades_in() {
+    WarmUpRadio r;
+    r.radio.begin();
+    r.renderUntil(3);
+    const double full = r.level(2.5, 3);
+    TEST_ASSERT_TRUE(full > 0.01);  // the static, at full level
+    TEST_ASSERT_TRUE(r.level(0, 0.1) < full * 0.15);
+    const double middle = r.level(0.65, 0.85);
+    TEST_ASSERT_TRUE(middle > full * 0.25);
+    TEST_ASSERT_TRUE(middle < full * 0.75);
+}
+
+void test_warmup_plays_boot_file_then_radio_comes_up() {
+    WarmUpRadio r;
+    r.storage.files["/system/boot.mp3"] = tone;  // 2 s: the radio comes up from 0.5 s
+    r.radio.begin();
+    r.renderUntil(0.4);
+    // Just the boot sound, with no static mixed in.
+    TEST_ASSERT_TRUE(r.level(0.1, 0.4) > 0.02);
+    TEST_ASSERT_FLOAT_WITHIN(5, 440, r.hz(0.1, 0.4));
+
+    r.renderUntil(4);
+    // It's over and closed: static now, and no more reads.
+    TEST_ASSERT_TRUE(r.level(3, 4) > 0.01);
+    TEST_ASSERT_TRUE(r.hz(3, 4) > 600);
+    const int reads = r.storage.reads["/system/boot.mp3"];
+    TEST_ASSERT_GREATER_THAN(0, reads);
+    r.renderUntil(5);
+    TEST_ASSERT_EQUAL(reads, r.storage.reads["/system/boot.mp3"]);
+}
+
+void test_warmup_follows_knob_and_level_setting() {
+    WarmUpRadio knobDown;
+    knobDown.storage.files["/system/boot.mp3"] = tone;
+    knobDown.radio.begin();
+    knobDown.input.next.knob = 0;
+    knobDown.renderUntil(0.4);
+    TEST_ASSERT_TRUE(knobDown.level(0.1, 0.4) < 0.0001);
+
+    WarmUpRadio silenced;
+    silenced.storage.files["/system/boot.mp3"] = tone;
+    silenced.storage.files["/system/config.json"] = R"({"audio": {"boot_level": 0}})";
+    silenced.radio.begin();
+    silenced.renderUntil(0.4);
+    TEST_ASSERT_TRUE(silenced.level(0.1, 0.4) < 0.0001);
+}
+
+void test_warmup_station_stays_live_underneath() {
+    WarmUpRadio r;
+    r.storage.files["/system/boot.mp3"] = tone;
+    r.storage.files["/stations/01_t/music/001_tone.mp3"] = tone;
+    r.storage.files["/stations/01_t/station.json"] = R"({"name": "Tone", "frequency": 98.6})";
+    r.storage.files["/stations/01_t/schedule.txt"] = ScheduleBuilder().add(2000, "music/001_tone.mp3").build();
+    r.clock.t = 20808LL * 86400;  // a Monday 00:00
+    r.radio.begin();
+    r.renderUntil(0.4);
+    const Radio::Status s = r.radio.status();
+    TEST_ASSERT_TRUE(s.playing);
+    TEST_ASSERT_UINT32_WITHIN(50, 400, s.offsetMs);  // moving, though not yet audible
+}
+
+void test_warmup_card_failure_or_bad_file_cant_keep_radio_silent() {
+    WarmUpRadio dropped;
+    dropped.storage.files["/system/boot.mp3"] = tone;
+    dropped.radio.begin();
+    dropped.renderUntil(0.1);
+    dropped.storage.failing = true;
+    dropped.renderUntil(2);
+    TEST_ASSERT_TRUE(dropped.level(1.7, 2) > 0.01);
+
+    WarmUpRadio garbage;
+    garbage.storage.files["/system/boot.mp3"] = std::string(16000 * 60, 'x');  // "60 s" long
+    garbage.radio.begin();
+    garbage.renderUntil(2);
+    TEST_ASSERT_TRUE(garbage.level(1.7, 2) > 0.01);
+}
+
 void test_recovers_from_card_dropout() {
     ToneRadio r(tone);
     r.run(1000);
@@ -341,6 +445,11 @@ int main() {
     RUN_TEST(test_mixer_ramps_smoothly);
     RUN_TEST(test_radio_plays_tuned_station);
     RUN_TEST(test_song_change_reads_schedule_once);
+    RUN_TEST(test_warmup_without_boot_file_just_fades_in);
+    RUN_TEST(test_warmup_plays_boot_file_then_radio_comes_up);
+    RUN_TEST(test_warmup_follows_knob_and_level_setting);
+    RUN_TEST(test_warmup_station_stays_live_underneath);
+    RUN_TEST(test_warmup_card_failure_or_bad_file_cant_keep_radio_silent);
     RUN_TEST(test_recovers_from_card_dropout);
     RUN_TEST(test_dead_card_retries_with_backoff);
     RUN_TEST(test_missing_file_is_not_a_card_failure);

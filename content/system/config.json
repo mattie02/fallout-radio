@@ -11,6 +11,7 @@
     "crackle_per_sec": 6,
     "eq_low_hz": 250,
     "eq_high_hz": 3800,
-    "drive": 1.4
+    "drive": 1.4,
+    "boot_level": 0.7
   }
 }

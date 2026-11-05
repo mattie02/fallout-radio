@@ -190,9 +190,9 @@ void test_display_gets_audio_even_with_volume_down() {
     Rig r;
     r.radio.begin();
     r.input.next.knob = 0;  // knob all the way down
-    r.audio.room = 2560;
+    r.audio.room = 2 * kSampleRate / 256 * 256;  // past the warm-up fade
     r.radio.update();
-    TEST_ASSERT_EQUAL(2560, r.display.audioSamples);
+    TEST_ASSERT_EQUAL(2 * kSampleRate / 256 * 256, r.display.audioSamples);
     TEST_ASSERT_GREATER_THAN(1000, r.display.audioPeak);  // the static
     for (int16_t s : r.audio.written) TEST_ASSERT_EQUAL(0, s);  // silent speaker
 }

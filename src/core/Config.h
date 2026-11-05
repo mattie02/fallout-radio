@@ -16,6 +16,7 @@ struct AudioConfig {
     float lowHz = 250.0f;       // vintage band-pass: high-pass corner
     float highHz = 3800.0f;     //   and low-pass corner
     float drive = 1.4f;         // soft saturation; 1 = clean
+    float bootLevel = 0.7f;     // loudness of /system/boot.mp3
 };
 
 // /system/config.json

@@ -8,6 +8,7 @@ python3 tools/prep/prep.py convert             # source/ -> content/ MP3s only
 python3 tools/prep/prep.py schedule            # rebuild schedule.txt only
 python3 tools/prep/prep.py schedule --station 01_crooner
 python3 tools/prep/prep.py demo                # placeholder audio into source/
+python3 tools/prep/make_boot_sound.py          # synthesized warm-up hum: source/system/boot.wav
 python3 tools/prep/prep.py check /Volumes/CARD # is the loaded card ready?
 python3 -m unittest discover -s tools/prep/tests
 ```

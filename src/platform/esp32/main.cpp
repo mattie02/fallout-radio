@@ -154,8 +154,9 @@ void pollSerial() {
 void setup() {
     Serial.begin(115200);
     const bool ok = radioApp.begin();
+    const uint32_t bootMs = millis();
 
-    Serial.println("\nVintage Radio");
+    Serial.printf("\nVintage Radio (ready %u ms after power-on)\n", bootMs);
     if (!clock_.hasRtc()) Serial.println("RTC: not found (check I2C wiring, address 0x68)");
     else if (clock_.wasReset()) Serial.println("RTC: had lost power; set to firmware build time. Use: time YYYY-MM-DD HH:MM");
     printTime();

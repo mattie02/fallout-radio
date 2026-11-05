@@ -21,12 +21,14 @@ void Mixer::configure(const AudioConfig& config) {
 }
 
 void Mixer::render(const int16_t* station, float signal, int16_t* out, size_t count,
-                   int16_t* beforeVolume) {
+                   int16_t* beforeVolume, const int16_t* boot) {
     for (size_t i = 0; i < count; ++i) {
         signal_ += kSmoothing * (signal - signal_);
         const float stationGain = signal_;
         const float staticGain = config_.staticLevel * (1.0f - signal_) + config_.hiss;
-        float x = station[i] / 32768.0f * stationGain + static_.next() * staticGain;
+        radioLevel_ += kSmoothing * (radioLevelTarget_ - radioLevel_);
+        float x = (station[i] / 32768.0f * stationGain + static_.next() * staticGain) * radioLevel_;
+        if (boot) x += boot[i] / 32768.0f * config_.bootLevel;
         float unscaled = 0;
         x = effects_.process(x, &unscaled);
         out[i] = toPcm(x);
