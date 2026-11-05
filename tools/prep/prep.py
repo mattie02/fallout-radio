@@ -5,6 +5,7 @@
     python3 tools/prep/prep.py convert         source/ -> content/ MP3s
     python3 tools/prep/prep.py schedule        content/ -> schedule.txt
     python3 tools/prep/prep.py demo            placeholder audio into source/
+    python3 tools/prep/prep.py check CARD      is the loaded card ready for the radio?
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from radioprep import audio  # noqa: E402
+from radioprep.check import check_card, print_report, volume_format  # noqa: E402
 from radioprep.content import convert_tree  # noqa: E402
 from radioprep.demo import make_demo  # noqa: E402
 from radioprep.schedule import RuleError  # noqa: E402
@@ -27,7 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Vintage Radio content prep")
     parser.add_argument("command", nargs="?", default="all",
-                        choices=["all", "convert", "schedule", "demo"])
+                        choices=["all", "convert", "schedule", "demo", "check"])
+    parser.add_argument("card", nargs="?", type=Path,
+                        help="for check: the mounted card, e.g. /Volumes/RADIO (default: content/)")
     parser.add_argument("--source", type=Path, default=ROOT / "source",
                         help="raw audio folder (default: source/)")
     parser.add_argument("--content", type=Path, default=ROOT / "content",
@@ -35,6 +39,13 @@ def main(argv=None) -> int:
     parser.add_argument("--station", help="only schedule this station, e.g. 01_crooner")
     parser.add_argument("-j", "--jobs", type=int, default=4, help="parallel conversions")
     args = parser.parse_args(argv)
+
+    if args.command == "check":  # no ffmpeg needed
+        card = args.card or args.content
+        filesystem = volume_format(card) if card.resolve().parts[1:2] == ("Volumes",) else None
+        return print_report(card, check_card(card, args.content, filesystem))
+    if args.card:
+        parser.error("a card path only goes with the check command")
 
     try:
         audio.require_tools()

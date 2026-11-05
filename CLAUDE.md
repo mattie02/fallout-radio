@@ -13,7 +13,7 @@ The vibe is a 1940s–50s post-apocalyptic radio, inspired by Fallout. All stati
 | # | Station | MHz | Folder | Content |
 |---|---|---|---|---|
 | 1 | Crooner ballads | 91.5 | `01_crooner` | Cheerful DJ, general chatter |
-| 2 | News | 95.3 | `02_news` | News reels, each clip self-contained (secretly about the recipient's life) |
+| 2 | Galaxy News Radio | 95.3 | `02_news` | News reels, each clip self-contained (secretly about the recipient's life) |
 | 3 | Big band / jazz | 99.7 | `03_bigband` | Parody ads |
 | 4 | Country / western | 103.1 | `04_country` | Gravelly DJ |
 | 5 | Late Night Talk | 88.9 | `05_talk` | Recordings of the talk show Coast to Coast AM, whole episodes back to back; no DJ, IDs or ads |
@@ -29,6 +29,7 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 - **Size:** episodes are long (~3 h). At 128 kbps that's ~58 MB per hour, ~173 MB per episode. An 8 GB card holds about 40 episodes plus the music. Schedule entries allow up to 27.7 h, and FAT32 allows 4 GB per file, so length is no problem.
 - **Prep time:** two-pass loudness normalization takes a few minutes per episode hour; the first big batch can take an hour or so. Later runs only convert new files.
 - **Weekly wrap:** the schedule restarts Monday 00:00, cutting whichever episode is playing then.
+- **The Whistler:** two parts of this 1942 radio drama air every day at 18:00 (`"daily"` in `station.json`), in order from `whistler/` via its `meta.json` arc, cutting whichever episode is playing. The week holds 14 parts, so Parts 1–14 are loaded; Parts 15–22 wait in `source-unused/`. Airing them needs a schedule longer than a week, which means a format and firmware change.
 
 ---
 
@@ -156,6 +157,7 @@ MP3 decoding should use the same decoder on both targets (for example, the decod
     station.json
     schedule.txt
     shows/               # whole talk-show episodes
+    whistler/            # radio drama, played by a daily slot
   99_hidden/ ...
 ```
 
@@ -203,7 +205,7 @@ Static is **generated in code** (filtered noise), not stored as files.
 
 ## Open decisions
 
-- **Time-of-day programming?** e.g. slower songs late at night, the hidden station only after midnight, or Late Night Talk airing only overnight (the real show ran late at night) and dead air by day. The schedule format already supports it.
+- **More time-of-day programming?** e.g. slower songs late at night, the hidden station only after midnight, or Late Night Talk airing only overnight (the real show ran late at night) and dead air by day. The prep tool's `daily` slots cover fixed daily times; these would need more rules.
 - **Talk episode order:** random for now; broadcast order via a `meta.json` arc if wanted.
 - **News strategy:** self-contained clips for now. Possible later: news at the top of the hour, date-triggered bulletins (birthday, Christmas morning), multi-day story arcs. To keep these possible, the prep tool should accept per-clip metadata (category, optional date, optional arc + order).
 - **Dial range and display style:** FM-style 88–108 vs. an AM-style range; what the OLED shows (frequency, station name, signal meter).

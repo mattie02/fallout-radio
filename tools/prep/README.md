@@ -9,6 +9,7 @@ python3 tools/prep/prep.py schedule            # rebuild schedule.txt only
 python3 tools/prep/prep.py schedule --station 01_crooner
 python3 tools/prep/prep.py demo                # placeholder audio into source/
 python3 tools/prep/make_boot_sound.py          # synthesized warm-up hum: source/system/boot.wav
+python3 tools/prep/prep.py check /Volumes/CARD # is the loaded card ready?
 python3 -m unittest discover -s tools/prep/tests
 ```
 
@@ -64,6 +65,10 @@ Optional `meta.json` next to the source files, keyed by source filename:
   - `silence`: seconds of dead air, `n` or `[min, max]`.
   - `chance`: probability the step happens at all (default 1).
   - Categories with no MP3s are skipped.
+- `daily` (optional): clips that start at a set time every day, e.g. `"daily": [{ "at": "18:00", "pick": "whistler", "count": 2 }]`.
+  - `at` is 24-hour `HH:MM` local time; `pick` and `count` work as in `pattern`.
+  - Whatever is playing at that time is cut short, and the pattern resumes when the slot's clips finish. A slot still running when the next one is due is cut short too.
+  - The schedule repeats weekly, so a slot airs the same clips on the same weekday each week. To air a serial in order, number it as an arc in `meta.json`; only the first 7 × `count` parts will air.
 - `no_repeat_hours`: a clip won't replay within this many hours, per category with `*` as the default. If there isn't enough audio to manage that, the least recently played clip is used (never the same clip twice in a row) and a warning is printed.
 - `seed` (optional): the same content and seed always give the same schedule. Defaults to a hash of the folder name.
 
@@ -81,3 +86,27 @@ Fixed-width 64-byte ASCII records, so the firmware can binary-search the file on
 - Start times are milliseconds since **Monday 00:00 local time**. The entries tile the week with no gaps, and the last one is cut off at the end of the week.
 - Paths are relative to the station folder; `-` means silence.
 - Playback: `ms = (now − most recent Monday 00:00) mod length`. Binary-search for the last entry with `start ≤ ms`, then seek to `ms − start` within that file.
+
+## check
+
+Run this after copying content to the card, before putting it in the radio. It doesn't need ffmpeg, and it exits with 1 if there are any errors. With no path it checks `content/`.
+
+```bash
+python3 tools/prep/prep.py check /Volumes/CARD
+```
+
+**Errors** mean the radio will misbehave:
+
+- The card isn't FAT32, or `system/config.json` is missing or invalid.
+- A station folder has a missing or invalid `station.json`, no frequency, a frequency off the dial, or the same frequency as another station.
+- A station has audio but no `schedule.txt`, or its schedule is damaged or has gaps.
+- A scheduled MP3 is missing, empty, cut short or not in the radio's format.
+- `system/boot.mp3` is there but not in the radio's format.
+- No station has any audio scheduled.
+- More stations have schedules than the firmware has file slots for (`kSdMaxFiles`).
+- A file in `content/` isn't on the card, or is a different size.
+
+**Warnings** mean the radio will run, but something's missing:
+
+- `system/boot.mp3` is missing, so there's no warm-up sound.
+- A station has no content yet, or its schedule is all silence.
