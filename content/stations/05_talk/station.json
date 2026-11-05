@@ -4,5 +4,8 @@
   "no_repeat_hours": { "shows": 72 },
   "pattern": [
     { "pick": "shows" }
+  ],
+  "daily": [
+    { "at": "18:00", "pick": "whistler", "count": 2 }
   ]
 }

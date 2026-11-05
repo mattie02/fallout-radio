@@ -5,8 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from radioprep.schedule import (  # noqa: E402
-    RECORD_SIZE, SILENCE, WEEK_MS, Clip, RuleError, format_schedule, generate, parse_pattern,
-    parse_schedule,
+    DAY_MS, RECORD_SIZE, SILENCE, WEEK_MS, Clip, RuleError, format_schedule, generate,
+    parse_daily, parse_pattern, parse_schedule, rule_categories,
 )
 
 HOUR = 3600 * 1000
@@ -14,6 +14,77 @@ HOUR = 3600 * 1000
 
 def songs(n, minutes=3, category="music"):
     return [Clip(f"{category}/{i:03d}_s.mp3", category, minutes * 60 * 1000) for i in range(1, n + 1)]
+
+
+class DailySlotTest(unittest.TestCase):
+    RULES = {
+        "pattern": [{"pick": "shows"}],
+        "daily": [{"at": "18:00", "pick": "drama", "count": 2}],
+    }
+
+    def serial(self, n=14, minutes=30):
+        return [Clip(f"drama/{i:03d}_d.mp3", "drama", minutes * 60 * 1000, arc="serial", order=i)
+                for i in range(n, 0, -1)]
+
+    def week(self, shows_hours=3, **kwargs):
+        shows = songs(8, minutes=shows_hours * 60, category="shows")
+        return generate(shows + self.serial(**kwargs), self.RULES, seed=1)
+
+    def test_starts_exactly_on_time_every_day(self):
+        entries = self.week()
+        starts = [e.start_ms for e in entries if e.path.startswith("drama/")]
+        self.assertEqual(starts[::2], [d * DAY_MS + 18 * HOUR for d in range(7)])
+
+    def test_serial_plays_in_order_with_nothing_between_parts(self):
+        entries = self.week()
+        drama = [(i, e) for i, e in enumerate(entries) if e.path.startswith("drama/")]
+        self.assertEqual([e.path for _, e in drama],
+                         [f"drama/{i:03d}_d.mp3" for i in range(1, 15)])
+        for (i, a), (j, _) in zip(drama[::2], drama[1::2]):
+            self.assertEqual(j, i + 1)
+            self.assertEqual(a.duration_ms, 30 * 60 * 1000)
+
+    def test_cuts_what_was_playing_and_resumes_the_pattern(self):
+        entries = self.week(shows_hours=4)  # 16:00-20:00 is cut at 18:00
+        t = 0
+        for e in entries:
+            self.assertEqual(e.start_ms, t)
+            self.assertGreater(e.duration_ms, 0)
+            t += e.duration_ms
+        self.assertEqual(t, WEEK_MS)
+        first = next(i for i, e in enumerate(entries) if e.path.startswith("drama/"))
+        self.assertEqual(entries[first - 1].start_ms + entries[first - 1].duration_ms, 18 * HOUR)
+        self.assertEqual(entries[first - 1].duration_ms, 2 * HOUR)
+        self.assertTrue(entries[first + 2].path.startswith("shows/"))
+
+    def test_slot_cut_short_by_the_next_slot(self):
+        entries = self.week(minutes=20 * 60)
+        starts = [e.start_ms for e in entries if e.path.startswith("drama/")]
+        self.assertEqual(starts, [d * DAY_MS + 18 * HOUR + (h * HOUR)
+                                  for d in range(7) for h in (0, 20)][:13])
+
+    def test_midnight_slot_and_empty_category(self):
+        rules = {"pattern": [{"pick": "music"}], "daily": [{"at": "00:00", "pick": "drama"}]}
+        entries = generate(songs(5) + self.serial(), rules, seed=1)
+        self.assertEqual(entries[0].path, "drama/001_d.mp3")
+        rules["daily"][0]["pick"] = "nothing_here"
+        entries = generate(songs(5), rules, seed=1)
+        self.assertTrue(all(e.path.startswith("music/") for e in entries))
+
+    def test_no_daily_rule_leaves_the_schedule_unchanged(self):
+        rules = {"pattern": [{"pick": "music", "count": [1, 3]}]}
+        self.assertEqual(generate(songs(10), rules, seed=7),
+                         generate(songs(10), {**rules, "daily": []}, seed=7))
+
+    def test_rule_categories_include_daily(self):
+        self.assertEqual(rule_categories(self.RULES), {"shows", "drama"})
+
+    def test_rejects_bad_slots(self):
+        for bad in ("18:00", [{"pick": "x"}], [{"at": "18:00"}], [{"at": "6pm", "pick": "x"}],
+                    [{"at": "24:00", "pick": "x"}], [{"at": "18:60", "pick": "x"}],
+                    [{"at": "18:00", "pick": "x"}, {"at": "18:00", "pick": "y"}]):
+            with self.assertRaises(RuleError):
+                parse_daily(bad)
 
 
 class GenerateTest(unittest.TestCase):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import audio
 from .content import META_OUT
-from .schedule import WEEK_MS, Clip, format_schedule, generate, no_repeat_ms, pattern_categories
+from .schedule import WEEK_MS, Clip, format_schedule, generate, no_repeat_ms, rule_categories
 
 STATION_FILE = "station.json"
 SCHEDULE_FILE = "schedule.txt"
@@ -70,7 +70,7 @@ def warn_small_pools(station: Path, clips: list[Clip], rules: dict, log):
 
 def build_schedule(station: Path, log) -> int:
     rules = json.loads((station / STATION_FILE).read_text())
-    clips = load_clips(station, pattern_categories(rules.get("pattern")), log)
+    clips = load_clips(station, rule_categories(rules), log)
     warn_small_pools(station, clips, rules, log)
     seed = rules.get("seed", zlib.crc32(station.name.encode()))
     entries = generate(clips, rules, seed=seed, length_ms=WEEK_MS)

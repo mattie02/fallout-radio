@@ -13,9 +13,11 @@ to the station folder, or "-" for silence. Entries tile the week exactly.
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, field
 
-WEEK_MS = 7 * 24 * 3600 * 1000
+DAY_MS = 24 * 3600 * 1000
+WEEK_MS = 7 * DAY_MS
 RECORD_SIZE = 64
 PATH_WIDTH = 44  # 9 + 1 + 8 + 1 + 44 + newline = 64
 SILENCE = "-"
@@ -94,6 +96,39 @@ def pattern_categories(pattern) -> set[str]:
     return {c for step in parse_pattern(pattern) for c in step.weights}
 
 
+def _parse_clock(value) -> int:
+    """'HH:MM' -> ms since midnight."""
+    m = re.fullmatch(r"(\d{2}):(\d{2})", value) if isinstance(value, str) else None
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        raise RuleError(f"daily 'at' must be 'HH:MM', got {value!r}")
+    return (int(m.group(1)) * 60 + int(m.group(2))) * 60 * 1000
+
+
+def parse_daily(daily) -> list[tuple[int, Step]]:
+    """The 'daily' rule: [{"at": "18:00", "pick": ..., "count": ...}], sorted by time."""
+    if daily is None:
+        return []
+    if not isinstance(daily, list):
+        raise RuleError("daily must be a list")
+    slots = []
+    for raw in daily:
+        if not isinstance(raw, dict) or "at" not in raw or "pick" not in raw:
+            raise RuleError(f"daily slot needs 'at' and 'pick': {raw!r}")
+        step = parse_pattern([{k: v for k, v in raw.items() if k in ("pick", "count")}])[0]
+        slots.append((_parse_clock(raw["at"]), step))
+    slots.sort(key=lambda slot: slot[0])
+    if len({at for at, _ in slots}) != len(slots):
+        raise RuleError("two daily slots share the same time")
+    return slots
+
+
+def rule_categories(rules: dict) -> set[str]:
+    categories = pattern_categories(rules.get("pattern"))
+    for _, step in parse_daily(rules.get("daily")):
+        categories |= set(step.weights)
+    return categories
+
+
 def no_repeat_ms(no_repeat_hours, category: str) -> int:
     if isinstance(no_repeat_hours, (int, float)):
         hours = no_repeat_hours
@@ -163,25 +198,59 @@ class _Picker:
 def generate(clips: list[Clip], rules: dict, seed: int, length_ms: int = WEEK_MS) -> list[Entry]:
     """Builds a schedule that exactly covers [0, length_ms).
 
-    The last entry is cut short at the end of the week.
+    The last entry is cut short at the end of the week. Each 'daily' slot
+    starts exactly on time, every day: whatever is playing then is cut short,
+    and the pattern carries on when the slot's clips finish.
     """
     steps = parse_pattern(rules.get("pattern"))
+    daily = parse_daily(rules.get("daily"))
+    slots = [(day * DAY_MS + at, step)
+             for day in range(length_ms // DAY_MS + 1)
+             for at, step in daily
+             if day * DAY_MS + at < length_ms]
     rng = random.Random(seed)
     picker = _Picker(clips, rules.get("no_repeat_hours", 0), rng)
 
     entries: list[Entry] = []
     t = 0
+    next_slot = 0
+
+    def limit() -> int:
+        return slots[next_slot][0] if next_slot < len(slots) else length_ms
 
     def add(duration_ms: int, path: str):
         nonlocal t
-        duration_ms = min(duration_ms, length_ms - t)
+        duration_ms = min(duration_ms, limit() - t)
         entries.append(Entry(t, duration_ms, path))
         t += duration_ms
+
+    def play_clip(category: str):
+        clip = picker.pick(category, t)
+        if clip.duration_ms <= 0:
+            raise RuleError(f"{clip.path} has no duration")
+        add(clip.duration_ms, clip.path)
+
+    def choose(weights: dict[str, float]) -> str:
+        return rng.choices(list(weights), weights=list(weights.values()))[0]
+
+    def ready() -> bool:
+        """Plays any slot that is due; True if there's still time to fill."""
+        nonlocal next_slot
+        while next_slot < len(slots) and slots[next_slot][0] <= t:
+            step = slots[next_slot][1]
+            next_slot += 1
+            available = {c: w for c, w in step.weights.items() if picker.has(c) and w > 0}
+            if available:
+                for _ in range(rng.randint(*step.count)):
+                    if t >= limit():
+                        break
+                    play_clip(choose(available))
+        return t < length_ms
 
     while t < length_ms:
         start_of_pass = t
         for step in steps:
-            if t >= length_ms:
+            if not ready():
                 break
             if step.chance < 1.0 and rng.random() >= step.chance:
                 continue
@@ -194,13 +263,9 @@ def generate(clips: list[Clip], rules: dict, seed: int, length_ms: int = WEEK_MS
             if not available:
                 continue
             for _ in range(rng.randint(*step.count)):
-                if t >= length_ms:
+                if not ready():
                     break
-                category = rng.choices(list(available), weights=list(available.values()))[0]
-                clip = picker.pick(category, t)
-                if clip.duration_ms <= 0:
-                    raise RuleError(f"{clip.path} has no duration")
-                add(clip.duration_ms, clip.path)
+                play_clip(choose(available))
         if t == start_of_pass:
             raise RuleError("pattern produced no audio: are its categories empty?")
     return entries
