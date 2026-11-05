@@ -30,6 +30,12 @@ Station rules live in `content/stations/*/station.json`. See [tools/prep/README.
    rsync -av --delete --exclude='.prep.json' --exclude='clips.json' content/ /Volumes/<CARD>/
    ```
 
+   Then check the card has everything the radio needs:
+
+   ```bash
+   python3 tools/prep/prep.py check /Volumes/<CARD>
+   ```
+
 2. **Flash:** plug into the board's COM/UART port.
 
    ```bash

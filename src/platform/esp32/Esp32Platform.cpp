@@ -410,7 +410,8 @@ constexpr char kMount[] = "/sd";  // where SD.begin() mounts the card in the VFS
 // Files open at once. Every station holds its schedule.txt open for good, and
 // on top of those sit the playing MP3 and the odd short-lived config file. The
 // library's default of 5 is used up by five stations, and then every MP3 fails
-// to open and plays as silence.
+// to open and plays as silence. `prep.py check` enforces this: keep SD_MAX_FILES
+// in tools/prep/radioprep/check.py the same.
 constexpr uint8_t kSdMaxFiles = 12;
 
 bool mountCard() {
