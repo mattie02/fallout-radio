@@ -1,6 +1,8 @@
 // ESP32-S3 entry point.
 //
-// Serial (COM/UART port, 115200 baud) commands:
+// Serial commands, on either USB port: COM/UART (115200 baud) or native USB.
+// Replies go back to the port the command came in on; the boot report goes to
+// COM only.
 //   time YYYY-MM-DD HH:MM[:SS]   set the RTC (recipient's local time)
 //   tune MHZ                     move the dial, e.g. "tune 91.5"
 //   status                       print time, tuning and what's playing
@@ -47,28 +49,36 @@ radio::Esp32Settings settings;
 radio::Platform platform{audio, input, display, clock_, storage, settings};
 radio::Radio radioApp(platform);
 
+// The native USB port. The core only creates this object when that port is the
+// main console (ARDUINO_USB_CDC_ON_BOOT), so make our own. Its writes are
+// skipped while no host is connected, so they never stall the audio loop.
+HWCDC usbSerial;
+
+// Where command replies go: the port the current command came in on.
+Print* out = &Serial;
+
 void printTime() {
     const radio::CivilTime t = radio::fromSeconds(clock_.now());
     static const char* kDays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-    Serial.printf("time: %s %04d-%02d-%02d %02d:%02d:%02d%s\n", kDays[t.weekday()], t.year, t.month,
+    out->printf("time: %s %04d-%02d-%02d %02d:%02d:%02d%s\n", kDays[t.weekday()], t.year, t.month,
                   t.day, t.hour, t.minute, t.second, clock_.hasRtc() ? "" : " (no RTC found)");
 }
 
 void printStatus() {
     printTime();
     const radio::Radio::Status s = radioApp.status();
-    Serial.printf("dial: %.1f MHz", s.dialMhz);
+    out->printf("dial: %.1f MHz", s.dialMhz);
     if (s.station >= 0) {
         const auto& st = radioApp.stations()[s.station];
-        Serial.printf("  station: %s  signal: %d%%", st.info.name.c_str(),
+        out->printf("  station: %s  signal: %d%%", st.info.name.c_str(),
                       static_cast<int>(s.signal * 100 + 0.5f));
         if (s.playing) {
-            Serial.printf("  playing: %s %u:%02u", s.entry.path, s.offsetMs / 60000,
+            out->printf("  playing: %s %u:%02u", s.entry.path, s.offsetMs / 60000,
                           s.offsetMs / 1000 % 60);
         }
     }
-    if (s.knob >= 0) Serial.printf("\nvolume knob: %d%%", static_cast<int>(s.knob * 100 + 0.5f));
-    Serial.printf("\nfree heap: %u bytes, loop stack never used: %u bytes\n",
+    if (s.knob >= 0) out->printf("\nvolume knob: %d%%", static_cast<int>(s.knob * 100 + 0.5f));
+    out->printf("\nfree heap: %u bytes, loop stack never used: %u bytes\n",
                   static_cast<unsigned>(ESP.getFreeHeap()),
                   static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
 }
@@ -81,14 +91,14 @@ uint32_t statsSinceMs = 0;
 void printAudio() {
     const radio::Radio::AudioStats a = radioApp.audioStats();
     const uint32_t ms = millis() - statsSinceMs;
-    Serial.printf("audio over %u ms: rendered %u frames (%.0f/s, need 44100/s), underruns %u\n", ms,
+    out->printf("audio over %u ms: rendered %u frames (%.0f/s, need 44100/s), underruns %u\n", ms,
                   a.framesRendered, ms ? a.framesRendered * 1000.0 / ms : 0.0, audio.takeUnderruns());
-    Serial.printf("  decoder %s, %d Hz, station peak %.3f, output peak %.3f, sd recoveries %u\n",
+    out->printf("  decoder %s, %d Hz, station peak %.3f, output peak %.3f, sd recoveries %u\n",
                   a.decoderOpen ? "open" : "CLOSED", a.sampleRate, a.stationPeak, a.outputPeak,
                   a.storageRecoveries);
-    Serial.printf("  loop: %u passes, slowest %u us\n", loopCount, slowestLoopUs);
+    out->printf("  loop: %u passes, slowest %u us\n", loopCount, slowestLoopUs);
     const radio::Esp32Storage::Timing sd = storage.takeTiming();
-    Serial.printf("  sd: %u opens, slowest open %u us, slowest read %u us\n", sd.opens,
+    out->printf("  sd: %u opens, slowest open %u us, slowest read %u us\n", sd.opens,
                   sd.slowestOpenUs, sd.slowestReadUs);
     loopCount = slowestLoopUs = 0;
     statsSinceMs = millis();
@@ -96,14 +106,14 @@ void printAudio() {
 
 void printDisplay() {
     const radio::Esp32Tft::Stats t = tft.stats();
-    Serial.printf("round display: %s, %u frames, last draw %u us, last push %u us (%u rows)\n",
+    out->printf("round display: %s, %u frames, last draw %u us, last push %u us (%u rows)\n",
                   t.ready ? "running" : "NOT RUNNING (no memory for frames?)", t.frames, t.drawUs,
                   t.pushUs, t.rows);
     const radio::Esp32Oled::Stats o = oled.stats();
-    if (o.present) Serial.printf("waveform: %u frames, last push %u us\n", o.frames, o.pushUs);
-    else Serial.println("waveform: no OLED");
-    Serial.printf("dial saves: %u, last took %u us\n", settings.saves(), settings.lastSaveUs());
-    Serial.printf("psram: %u bytes, %u free\n", static_cast<unsigned>(ESP.getPsramSize()),
+    if (o.present) out->printf("waveform: %u frames, last push %u us\n", o.frames, o.pushUs);
+    else out->println("waveform: no OLED");
+    out->printf("dial saves: %u, last took %u us\n", settings.saves(), settings.lastSaveUs());
+    out->printf("psram: %u bytes, %u free\n", static_cast<unsigned>(ESP.getPsramSize()),
                   static_cast<unsigned>(ESP.getFreePsram()));
 }
 
@@ -111,10 +121,10 @@ void runCommand(const char* line) {
     if (std::strncmp(line, "time ", 5) == 0) {
         radio::CivilTime t;
         if (!radio::parseCivilTime(line + 5, t)) {
-            Serial.println("usage: time YYYY-MM-DD HH:MM[:SS]");
+            out->println("usage: time YYYY-MM-DD HH:MM[:SS]");
             return;
         }
-        if (!clock_.set(radio::toSeconds(t))) Serial.println("warning: no RTC; time will be lost at power-off");
+        if (!clock_.set(radio::toSeconds(t))) out->println("warning: no RTC; time will be lost at power-off");
         printTime();
     } else if (std::strcmp(line, "status") == 0) {
         printStatus();
@@ -124,35 +134,55 @@ void runCommand(const char* line) {
         printDisplay();
     } else if (std::strncmp(line, "volume ", 7) == 0) {
         radioApp.setVolume(static_cast<float>(std::atof(line + 7)));
-        Serial.printf("volume %.2f\n", std::atof(line + 7));
+        out->printf("volume %.2f\n", std::atof(line + 7));
     } else if (std::strncmp(line, "tune ", 5) == 0) {
         radioApp.tuneTo(static_cast<float>(std::atof(line + 5)));
         printStatus();
     } else {
-        Serial.println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio | display");
+        out->println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio | display");
     }
 }
 
-// Non-blocking line reader.
-void pollSerial() {
-    static char line[64];
-    static size_t len = 0;
-    while (Serial.available() > 0) {
-        const char c = static_cast<char>(Serial.read());
-        if (c == '\n' || c == '\r') {
-            line[len] = 0;
-            if (len > 0) runCommand(line);
-            len = 0;
-        } else if (len < sizeof(line) - 1) {
-            line[len++] = c;
+// Non-blocking line reader, one per port.
+class LineReader {
+public:
+    explicit LineReader(Stream& port) : port_(port) {}
+    void poll() {
+        while (port_.available() > 0) {
+            const char c = static_cast<char>(port_.read());
+            if (c == '\n' || c == '\r') {
+                line_[len_] = 0;
+                if (len_ > 0) {
+                    out = &port_;
+                    runCommand(line_);
+                    out = &Serial;
+                }
+                len_ = 0;
+            } else if (len_ < sizeof(line_) - 1) {
+                line_[len_++] = c;
+            }
         }
     }
+
+private:
+    Stream& port_;
+    char line_[64];
+    size_t len_ = 0;
+};
+
+LineReader comReader(Serial);     // COM/UART port
+LineReader usbReader(usbSerial);  // native USB port (USB Serial/JTAG)
+
+void pollSerial() {
+    comReader.poll();
+    usbReader.poll();
 }
 
 }  // namespace
 
 void setup() {
     Serial.begin(115200);
+    usbSerial.begin();
     const bool ok = radioApp.begin();
     const uint32_t bootMs = millis();
 
