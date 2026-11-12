@@ -7,14 +7,18 @@
 //   tune MHZ                     move the dial, e.g. "tune 91.5"
 //   status                       print time, tuning and what's playing
 //   display                      print stats for both screens
+//   bootlog                      how far this and the previous power-on got
 
 #include <Arduino.h>
 
 #include <cstdlib>
 #include <cstring>
 
+#include <esp_task_wdt.h>
+
 #include "core/CivilTime.h"
 #include "core/Radio.h"
+#include "platform/esp32/BootLog.h"
 #include "platform/esp32/Esp32Platform.h"
 #include "platform/esp32/Esp32Tft.h"
 
@@ -25,8 +29,41 @@ SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
 namespace {
 
-radio::Esp32Audio audio;
-radio::Esp32Input input;
+// If startup or the loop stalls this long, the task watchdog restarts the
+// board, as pressing RST would. Startup takes ~2 s, more with a slow SD card.
+constexpr uint32_t kHangTimeoutMs = 15000;
+
+radio::BootLog bootLog;
+
+// The platform devices, each noting in the boot log when it starts, so a boot
+// that hangs shows where.
+struct LoggedAudio : radio::Esp32Audio {
+    bool begin(uint32_t rate) override {
+        bootLog.mark(radio::BootLog::kAudio);
+        return Esp32Audio::begin(rate);
+    }
+};
+struct LoggedInput : radio::Esp32Input {
+    bool begin() override {
+        bootLog.mark(radio::BootLog::kInput);
+        return Esp32Input::begin();
+    }
+};
+struct LoggedClock : radio::Esp32Clock {
+    bool begin() override {
+        bootLog.mark(radio::BootLog::kClock);
+        return Esp32Clock::begin();
+    }
+};
+struct LoggedStorage : radio::Esp32Storage {
+    bool begin() override {
+        bootLog.mark(radio::BootLog::kStorage);
+        return Esp32Storage::begin();
+    }
+};
+
+LoggedAudio audio;
+LoggedInput input;
 radio::Esp32Oled oled;
 radio::Esp32Tft tft;
 
@@ -34,6 +71,7 @@ radio::Esp32Tft tft;
 class Screens : public radio::Display {
 public:
     bool begin() override {
+        bootLog.mark(radio::BootLog::kDisplay);
         const bool hasOled = oled.begin();
         Serial.printf("OLED: %s\n", hasOled ? "found" : "not found");
         return tft.begin();
@@ -43,8 +81,8 @@ public:
 };
 
 Screens display;
-radio::Esp32Clock clock_;
-radio::Esp32Storage storage;
+LoggedClock clock_;
+LoggedStorage storage;
 radio::Esp32Settings settings;
 radio::Platform platform{audio, input, display, clock_, storage, settings};
 radio::Radio radioApp(platform);
@@ -132,6 +170,8 @@ void runCommand(const char* line) {
         printAudio();
     } else if (std::strcmp(line, "display") == 0) {
         printDisplay();
+    } else if (std::strcmp(line, "bootlog") == 0) {
+        bootLog.report(*out);
     } else if (std::strncmp(line, "volume ", 7) == 0) {
         radioApp.setVolume(static_cast<float>(std::atof(line + 7)));
         out->printf("volume %.2f\n", std::atof(line + 7));
@@ -139,7 +179,7 @@ void runCommand(const char* line) {
         radioApp.tuneTo(static_cast<float>(std::atof(line + 5)));
         printStatus();
     } else {
-        out->println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio | display");
+        out->println("commands: time YYYY-MM-DD HH:MM[:SS] | tune MHZ | volume 0..1 | status | audio | display | bootlog");
     }
 }
 
@@ -183,6 +223,14 @@ void pollSerial() {
 void setup() {
     Serial.begin(115200);
     usbSerial.begin();
+    // Watch this task (setup, then loop): a hang restarts the board.
+    esp_task_wdt_config_t wdt = {};
+    wdt.timeout_ms = kHangTimeoutMs;
+    wdt.idle_core_mask = 1 << 0;  // as configured: core 0's idle task
+    wdt.trigger_panic = true;
+    if (esp_task_wdt_reconfigure(&wdt) != ESP_OK) esp_task_wdt_init(&wdt);
+    esp_task_wdt_add(nullptr);
+    bootLog.begin();
     const bool ok = radioApp.begin();
     const uint32_t bootMs = millis();
 
@@ -196,9 +244,17 @@ void setup() {
                       s.schedule.isOpen() ? "" : "(no schedule.txt)");
     }
     if (!ok) Serial.println("warning: some devices failed to start (SD card? amp? display?)");
+    bootLog.report(Serial);
 }
 
 void loop() {
+    esp_task_wdt_reset();
+    bootLog.mark(radio::BootLog::kLoop);
+    static bool drawn = false;
+    if (!drawn && tft.stats().frames > 0) {
+        drawn = true;
+        bootLog.mark(radio::BootLog::kFirstFrame);
+    }
     const uint32_t start = micros();
     radioApp.update();
     const uint32_t took = micros() - start;

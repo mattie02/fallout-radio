@@ -31,26 +31,39 @@ bool Radio::begin() {
     const bool storageOk = p_.storage.begin();
     ok &= storageOk;
 
-    if (storageOk) {
-        loadRadioConfig(p_.storage, config_);
-        loadStations();
-        warmUp_.begin(p_.storage);
-    }
     mixer_.setRadioLevel(0, true);
-    dialMin_ = tenths(config_.dialMinMhz);
-    dialMax_ = std::max(dialMin_, tenths(config_.dialMaxMhz));
     int restored = dial_;
     if (p_.settings.loadDial(restored)) dial_ = restored;
-    dial_ = std::min(std::max(dial_, dialMin_), dialMax_);
+    if (storageOk) {
+        loadContent();
+        warmUp_.begin(p_.storage);
+    } else {
+        // Not there yet (a cold card can be slow to wake): recoverStorage()
+        // keeps trying, and the stations appear once it answers.
+        applyConfig();
+    }
     savedDial_ = lastSeenDial_ = dial_;
     dialMovedMs_ = p_.clock.millis();
+    // Last: once it starts, the output needs feeding, and loading takes a while.
+    ok &= p_.audio.begin(kSampleRate);
+    return ok;
+}
+
+void Radio::loadContent() {
+    loadRadioConfig(p_.storage, config_);
+    loadStations();
+    contentLoaded_ = true;
+    applyConfig();
+}
+
+void Radio::applyConfig() {
+    dialMin_ = tenths(config_.dialMinMhz);
+    dialMax_ = std::max(dialMin_, tenths(config_.dialMaxMhz));
+    dial_ = std::min(std::max(dial_, dialMin_), dialMax_);
     tuner_.setSignal(config_.lockMhz, config_.fadeMhz);
     mixer_.configure(config_.audio);
     retune();
     dirty_ = true;
-    // Last: once it starts, the output needs feeding, and loading takes a while.
-    ok &= p_.audio.begin(kSampleRate);
-    return ok;
 }
 
 void Radio::reloadConfig() {
@@ -154,7 +167,7 @@ std::string Radio::schedulePath(const Station& s) {
 }
 
 bool Radio::storageTrouble() const {
-    if (player_.failed() || lookupFailed_) return true;
+    if (!contentLoaded_ || player_.failed() || lookupFailed_) return true;
     for (const auto& s : stations_)
         if (s.scheduled && !s.schedule.isOpen()) return true;  // lost in a failed recovery
     return false;
@@ -174,9 +187,13 @@ void Radio::recoverStorage(int64_t nowMs) {
     player_.stop();
     warmUp_.stop();
     for (auto& s : stations_) s.schedule.close();
-    p_.storage.recover();
-    for (auto& s : stations_)
-        if (s.scheduled) s.schedule.open(p_.storage, schedulePath(s).c_str());
+    const bool back = p_.storage.recover();
+    if (!contentLoaded_) {
+        if (back) loadContent();  // the card wasn't ready at power-on
+    } else {
+        for (auto& s : stations_)
+            if (s.scheduled) s.schedule.open(p_.storage, schedulePath(s).c_str());
+    }
     lookupFailed_ = false;
     playerStation_ = kForceRestart;
     ++statRecoveries_;

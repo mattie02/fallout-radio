@@ -70,6 +70,8 @@ DJ clips are general chatter, not intros tied to specific songs. Frequencies liv
 
 Power: a USB-C charger (5V, 2A or more) feeds a USB-C breakout (with 5.1 kΩ CC resistors). Its 5V goes through **SW1, the on/off switch built into the volume pot**, to the 5V rail: 5VIN, amp V and SD VCC. Ground is never switched. OLED, TFT, encoder, RTC and the volume pot run from **3V3**. All grounds are shared. The amp is a 5-pin MAX98357A board (G, V, BCL, LRC, DIN) with gain and channel mode fixed on the board. Bulk capacitors: C1 1000 µF across amp V/G, C2 100 µF across SD VCC/GND.
 
+**GPIO0 pull-up (R1, 10 kΩ from GPIO0 to 3V3) and EN delay (C3, 4.7–10 µF from EN to GND): both required.** Without R1, after a long time off the radio powered on with the TFT backlight lit, a blank screen and no sound until RST was pressed. A JTAG read of the stuck chip (OpenOCD over the native USB port, `board/esp32s3-builtin.cfg`) showed it in the ROM's download mode after a power-on reset: GPIO_STRAP_REG read 0x21, meaning GPIO0 (BOOT) was sampled low as the chip left reset. On a fully cold start GPIO0 rises too slowly on the chip's weak internal pull-up alone. R1 fixed it (tested twice after long power-offs). A brownout reset was also seen once, so the 5 V rail is marginal.
+
 **Pins to avoid:** 0, 3, 45, 46 (strapping pins); 19 and 20 (native USB); 26–32 (flash); 33–37 (octal PSRAM on N8R8/N16R8 modules); 43 and 44 (UART0 / COM port); 38 and 48 (onboard RGB LED on DevKitC-1 boards).
 
 ### Controls

@@ -74,6 +74,10 @@ private:
     // Re-seek the player if it drifts this far from the clock.
     static constexpr int64_t kMaxDriftMs = 2000;
 
+    // Reads config.json and the stations from storage, then applyConfig().
+    void loadContent();
+    // Dial range, signal and audio settings from config_; re-clamps the dial.
+    void applyConfig();
     void loadStations();
     void retune();
     int64_t localMs();
@@ -121,6 +125,9 @@ private:
     int64_t lastLookupFailMs_ = INT64_MIN / 2;
     bool lookupFailed_ = false;
 
+    // False while storage hasn't answered since power-on: no config or
+    // stations yet. Storage recovery keeps trying until it does.
+    bool contentLoaded_ = false;
     // Storage recovery (SD card dropouts): retry with growing pauses.
     int64_t nextRecoveryMs_ = INT64_MIN / 2;
     int64_t recoveryBackoffMs_ = 2000;

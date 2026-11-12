@@ -418,6 +418,35 @@ void test_dead_card_retries_with_backoff() {
     TEST_ASSERT_TRUE(r.radio.status().playing);
 }
 
+// After a long time off, the card can still be waking up when the radio
+// starts. It must come up with the stations once the card answers, not boot
+// to static for good.
+void test_card_not_ready_at_power_on() {
+    FakePlatform p;
+    Radio radio{p.platform};
+    p.storage.files["/stations/01_t/music/001_tone.mp3"] = tone;
+    p.storage.files["/stations/01_t/station.json"] = R"({"name": "Tone", "frequency": 98.6})";
+    p.storage.files["/stations/01_t/schedule.txt"] = ScheduleBuilder().add(60000, "music/001_tone.mp3").build();
+    p.storage.files["/system/config.json"] = R"({"dial": {"min": 90.0, "max": 100.0}})";
+    p.clock.t = 20808LL * 86400;
+    p.settings.hasDial = true;
+    p.settings.dial = 986;
+    p.storage.failing = true;
+    radio.begin();
+    TEST_ASSERT_EQUAL(0, static_cast<int>(radio.stations().size()));
+
+    p.storage.failing = false;  // card wakes up
+    for (int t = 0; t < 3000; t += 50) {
+        p.clock.ms += 50;
+        p.audio.room += kSampleRate / 20;
+        radio.update();
+    }
+    TEST_ASSERT_EQUAL(1, static_cast<int>(radio.stations().size()));
+    TEST_ASSERT_EQUAL(900, radio.dialMin());  // config.json applied late too
+    TEST_ASSERT_EQUAL(986, radio.dial());     // saved dial kept
+    TEST_ASSERT_TRUE(radio.status().playing);
+}
+
 void test_missing_file_is_not_a_card_failure() {
     ToneRadio r(tone);
     r.storage.files.erase("/stations/01_t/music/001_tone.mp3");
@@ -452,6 +481,7 @@ int main() {
     RUN_TEST(test_warmup_card_failure_or_bad_file_cant_keep_radio_silent);
     RUN_TEST(test_recovers_from_card_dropout);
     RUN_TEST(test_dead_card_retries_with_backoff);
+    RUN_TEST(test_card_not_ready_at_power_on);
     RUN_TEST(test_missing_file_is_not_a_card_failure);
     return UNITY_END();
 }

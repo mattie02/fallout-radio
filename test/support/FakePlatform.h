@@ -105,7 +105,7 @@ struct MemoryStorage : Storage {
     bool recoverable = true;
     int recoveries = 0;
 
-    bool begin() override { return true; }
+    bool begin() override { return !failing; }
     bool exists(const char* path) override { return !failing && files.count(path) > 0; }
     std::unique_ptr<File> open(const char* path) override {
         auto it = files.find(path);
