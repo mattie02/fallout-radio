@@ -454,7 +454,18 @@ private:
 
 bool Esp32Storage::begin() {
     sdSpi.begin(pins::kSdSck, pins::kSdMiso, pins::kSdMosi, pins::kSdCs);
-    ok_ = mountCard();
+    // After a long time off, with the 5 V rail's capacitors fully drained, the
+    // card (behind the module's regulator) can still be waking up when the
+    // ESP32 first asks for it. Give it about a second before booting without
+    // it; Radio keeps retrying after that.
+    for (uint32_t waitMs : {0u, 100u, 200u, 300u, 400u}) {
+        if (waitMs) {
+            SD.end();
+            delay(waitMs);
+        }
+        ok_ = mountCard();
+        if (ok_) break;
+    }
     return ok_;
 }
 
